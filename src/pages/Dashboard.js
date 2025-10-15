@@ -21,18 +21,36 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [bookingsResponse, cancelledResponse, resourcesResponse] = await Promise.all([
+        const [bookingsResponse, resourcesResponse] = await Promise.all([
           bookingAPI.getAllBookings(false),
-          bookingAPI.getCancelledBookings(),
           bookingAPI.getResources()
         ]);
         
         const transformedBookings = bookingsResponse.data.map(transformBookingForUI);
-        const transformedCancelled = cancelledResponse.data.map(transformBookingForUI);
         
         setBookings(transformedBookings);
-        setCancelledBookings(transformedCancelled);
         setResources(resourcesResponse.data || []);
+
+        // Fetch cancelled meetings using the correct endpoint
+        const cancelledResponse = await fetch('http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting');
+        const cancelledData = await cancelledResponse.json();
+        
+        // API returns array directly without nested data property
+        // Handle both array response and object with data property
+        const cancelledArray = Array.isArray(cancelledData) ? cancelledData : (cancelledData.data || []);
+        
+        // Map cancelled meetings - the API returns basic info, so we'll use it as is
+        const transformedCancelled = cancelledArray.map(item => ({
+          id: item._id || item.id,
+          resource: item.resource || { name: item.resourceName || 'N/A' },
+          customer: item.customer || item.customerName || 'N/A',
+          starts_at: item.starts_at || item.startsAt || item.createdAt,
+          ends_at: item.ends_at || item.endsAt,
+          status: 'Cancelled',
+          ...item
+        }));
+        
+        setCancelledBookings(transformedCancelled);
       } catch (err) {
         setError('Failed to fetch data');
         console.error('Error fetching data:', err);
@@ -60,9 +78,29 @@ export default function Dashboard() {
     return weekDates;
   };
 
+  // Get current month name
+  const getCurrentMonth = () => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return monthNames[new Date().getMonth()];
+  };
+
+  // Calculate current month's bookings
+  const getCurrentMonthBookings = () => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    
+    return bookings.filter(b => {
+      if (!b.starts_at) return false;
+      const bookingDate = new Date(b.starts_at);
+      return bookingDate.getMonth() === currentMonth && 
+             bookingDate.getFullYear() === currentYear &&
+             b.status === 'Confirmed';
+    }).length;
+  };
+
   // Calculate statistics
   const totalBookings = bookings.length;
-  const confirmedBookings = bookings.filter(b => b.status === 'Confirmed').length;
+  const currentMonthConfirmedBookings = getCurrentMonthBookings();
   const totalResources = resources.length;
   const uniqueCustomers = new Set(bookings.map(b => b.customer).filter(c => c && c !== 'N/A')).size;
 
@@ -219,10 +257,10 @@ export default function Dashboard() {
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="text-sm text-gray-600">Recent Bookings</div>
-                  <div className="text-xs text-gray-400">Oct</div>
+                  <div className="text-xs text-gray-400">{getCurrentMonth()}</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{confirmedBookings}</div>
+                  <div className="text-3xl font-semibold text-gray-900">{currentMonthConfirmedBookings}</div>
                   <Calendar className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
                 </div>
               </div>
