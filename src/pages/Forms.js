@@ -1,53 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
+import formsAPI from '../services/formsApi';
 
 export default function Forms() {
   const navigate = useNavigate();
-  const [forms, setForms] = useState([
-    {
-      id: 1,
-      name: 'Upgrading to InnoPeers+ Form (For InnoPeers to upgrade)',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    },
-    {
-      id: 2,
-      name: 'Upgrading to InnoPeers Form (For InnoBuddies to upgrade)',
-      workspace: 'CUHK InnoPort',
-      status: 'Inactive'
-    },
-    {
-      id: 3,
-      name: 'InnoPeers+ Registration Form',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    },
-    {
-      id: 4,
-      name: 'InnoPeers Registration Form',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    },
-    {
-      id: 5,
-      name: 'InnoBuddies Registration Form',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    },
-    {
-      id: 6,
-      name: 'Event Hall Reservation Details for Approval Form',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    },
-    {
-      id: 7,
-      name: '3B VIP Room Reservation Details for Approval',
-      workspace: 'CUHK InnoPort',
-      status: 'Active'
-    }
-  ]);
+  const [forms, setForms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedForms, setSelectedForms] = useState([]);
@@ -60,8 +20,39 @@ export default function Forms() {
   const [newForm, setNewForm] = useState({
     name: '',
     description: '',
-    isActive: true
+    type: 'survey',
+    active: true
   });
+
+  // Load forms on component mount
+  useEffect(() => {
+    loadForms();
+  }, []);
+
+  const loadForms = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const formsArray = await formsAPI.getAllForms();
+      
+      // API returns array directly, transform to match UI expectations
+      const transformedForms = formsArray.map(form => ({
+        id: form._id,
+        name: form.name,
+        workspace: '', // No default workspace
+        status: form.active ? 'Active' : 'Inactive',
+        description: form.description,
+        type: form.type
+      }));
+      
+      setForms(transformedForms);
+    } catch (err) {
+      setError('Failed to load forms. Please try again.');
+      console.error('Error loading forms:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBulkToggle = () => {
     setBulkMode(!bulkMode);
@@ -76,10 +67,27 @@ export default function Forms() {
     );
   };
 
-  const handleDeleteSelected = () => {
-    setForms(prev => prev.filter(form => !selectedForms.includes(form.id)));
-    setSelectedForms([]);
-    setBulkMode(false);
+  const handleDeleteSelected = async () => {
+    if (selectedForms.length === 0) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Delete selected forms
+      await formsAPI.bulkDeleteForms(selectedForms);
+      
+      // Reload forms to get fresh data
+      await loadForms();
+      
+      setSelectedForms([]);
+      setBulkMode(false);
+    } catch (err) {
+      setError('Failed to delete forms. Please try again.');
+      console.error('Error deleting forms:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleExport = () => {
@@ -101,62 +109,148 @@ export default function Forms() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleAddForm = () => {
-    const form = {
-      id: forms.length + 1,
-      name: newForm.name,
-      workspace: 'CUHK InnoPort',
-      status: newForm.isActive ? 'Active' : 'Inactive'
-    };
-    setForms([...forms, form]);
-    setShowAddForm(false);
-    setNewForm({
-      name: '',
-      description: '',
-      isActive: true
-    });
+  const handleAddForm = async () => {
+    if (!newForm.name.trim()) {
+      setError('Form name is required');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Prepare data for API
+      const formData = {
+        name: newForm.name,
+        description: newForm.description || '',
+        type: newForm.type || 'survey',
+        active: newForm.active
+      };
+      
+      // Create new form - API returns {message, form}
+      const response = await formsAPI.createForm(formData);
+      console.log('Form created:', response);
+      
+      // Reload forms to get fresh data with IDs from server
+      await loadForms();
+      
+      setShowAddForm(false);
+      setNewForm({
+        name: '',
+        description: '',
+        type: 'survey',
+        active: true
+      });
+    } catch (err) {
+      setError('Failed to create form. Please try again.');
+      console.error('Error creating form:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEditForm = () => {
-    setForms(prev => prev.map(form => 
-      form.id === editingForm.id 
-        ? {
-            ...form,
-            name: newForm.name,
-            status: newForm.isActive ? 'Active' : 'Inactive'
-          }
-        : form
-    ));
-    setShowEditForm(false);
-    setEditingForm(null);
-    setNewForm({
-      name: '',
-      description: '',
-      isActive: true
-    });
+  const handleEditForm = async () => {
+    if (!newForm.name.trim()) {
+      setError('Form name is required');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Prepare data for API
+      const formData = {
+        name: newForm.name,
+        description: newForm.description || '',
+        type: newForm.type || 'survey',
+        active: newForm.active
+      };
+      
+      // Update form
+      await formsAPI.updateForm(editingForm.id, formData);
+      
+      // Reload forms to get fresh data
+      await loadForms();
+      
+      setShowEditForm(false);
+      setEditingForm(null);
+      setNewForm({
+        name: '',
+        description: '',
+        type: 'survey',
+        active: true
+      });
+    } catch (err) {
+      setError('Failed to update form. Please try again.');
+      console.error('Error updating form:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openEditModal = (form) => {
     setEditingForm(form);
     setNewForm({
       name: form.name,
-      description: 'Form for collecting user information and registration data.',
-      isActive: form.status === 'Active'
+      description: form.description || 'Form for collecting user information and registration data.',
+      type: form.type || 'survey',
+      active: form.status === 'Active'
     });
     setShowEditForm(true);
     setActiveDropdown(null);
   };
 
-  const handleStatusChange = (formId, newStatus) => {
-    setForms(prev => prev.map(form => 
-      form.id === formId ? { ...form, status: newStatus } : form
-    ));
-    setActiveDropdown(null);
+  const handleStatusChange = async (formId, newStatus) => {
+    try {
+      setError('');
+      
+      // Find the form to get its current data
+      const form = forms.find(f => f.id === formId);
+      if (!form) return;
+      
+      // Prepare data for API - send complete form data with updated status
+      const formData = {
+        name: form.name,
+        description: form.description || '',
+        type: form.type || 'survey',
+        active: newStatus === 'Active'
+      };
+      
+      // Update form status
+      await formsAPI.updateForm(formId, formData);
+      
+      // Update local state optimistically
+      setForms(prev => prev.map(f => 
+        f.id === formId ? { ...f, status: newStatus } : f
+      ));
+      
+      setActiveDropdown(null);
+    } catch (err) {
+      setError('Failed to update form status. Please try again.');
+      console.error('Error updating form status:', err);
+    }
   };
 
   const filteredForms = forms.filter(form =>
     form.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-gray-50">
+        <Sidebar currentPath="/forms" />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 overflow-y-auto bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading forms...</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -170,6 +264,21 @@ export default function Forms() {
                 <p className="text-sm text-gray-500 mt-1">All Forms</p>
               </div>
             </div>
+            
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <div className="text-sm text-red-600">{error}</div>
+                  <button 
+                    onClick={() => setError('')}
+                    className="ml-auto text-red-400 hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200 flex items-center justify-between">
@@ -274,13 +383,6 @@ export default function Forms() {
                               onClick={() => navigate(`/forms/${form.id}`)}
                             >
                               {form.name}
-                            </div>
-                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                                <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1"/>
-                                <path d="M6 3v3l2 1" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
-                              </svg>
-                              {form.workspace}
                             </div>
                           </div>
                         </td>
@@ -426,15 +528,15 @@ export default function Forms() {
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={newForm.isActive}
-                      onChange={(e) => setNewForm({...newForm, isActive: e.target.checked})}
+                      checked={newForm.active}
+                      onChange={(e) => setNewForm({...newForm, active: e.target.checked})}
                       className="sr-only"
                     />
                     <div className={`w-11 h-6 rounded-full transition-colors ${
-                      newForm.isActive ? 'bg-blue-600' : 'bg-gray-200'
+                      newForm.active ? 'bg-blue-600' : 'bg-gray-200'
                     }`}>
                       <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
-                        newForm.isActive ? 'translate-x-5' : 'translate-x-0.5'
+                        newForm.active ? 'translate-x-5' : 'translate-x-0.5'
                       } mt-0.5`}>
                       </div>
                     </div>
@@ -453,7 +555,8 @@ export default function Forms() {
                   setNewForm({
                     name: '',
                     description: '',
-                    isActive: true
+                    type: 'survey',
+                    active: true
                   });
                 }}
                 className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
