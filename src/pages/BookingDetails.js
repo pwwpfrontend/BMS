@@ -5,23 +5,17 @@ import Sidebar from '../components/Sidebar';
 import bookingAPI from '../services/bookingApi';
 import { transformBookingForUI, formatTime, formatDate } from '../utils/bookingUtils';
 
-// Analytics helper
 const trackEvent = (eventName, properties) => {
-  console.log('Analytics:', eventName, properties);
-  // TODO: Implement actual analytics tracking
+  // no-op analytics stub in production
 };
 
-// Toast notification helper
 const showToast = (message, type = 'success') => {
-  // TODO: Implement proper toast notifications
-  console.log(`${type.toUpperCase()}: ${message}`);
+  // replace console toast with silent stub
 };
 
-// Loading skeleton component
 function BookingDetailsSkeleton() {
   return (
     <div className="animate-pulse">
-      {/* Header skeleton */}
       <div className="flex items-start gap-6 mb-8">
         <div className="w-16 h-16 bg-gray-300 rounded-lg"></div>
         <div className="flex-1">
@@ -31,7 +25,6 @@ function BookingDetailsSkeleton() {
         <div className="w-20 h-4 bg-gray-300 rounded"></div>
       </div>
 
-      {/* Main content skeleton */}
       <div className="grid grid-cols-3 gap-8">
         <div className="col-span-2 space-y-6">
           <div className="h-4 bg-gray-300 rounded w-20"></div>
@@ -62,14 +55,12 @@ export default function BookingDetails() {
   const [addNoteToggle, setAddNoteToggle] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
 
-  // Fetch booking data
   useEffect(() => {
     const fetchBooking = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        // First try to get from cache/context if available
         const cachedBooking = getCachedBooking(bookingId);
         if (cachedBooking) {
           setBooking(cachedBooking);
@@ -79,7 +70,16 @@ export default function BookingDetails() {
           return;
         }
 
-        // Fetch from API
+        // Check if this is a tentative demo booking
+        const tentativeBooking = getTentativeBooking(bookingId);
+        if (tentativeBooking) {
+          setBooking(tentativeBooking);
+          setNotes(tentativeBooking.notes || '');
+          setLoading(false);
+          trackEvent('booking_open', { bookingId });
+          return;
+        }
+
         const response = await bookingAPI.getAllBookings();
         const foundBooking = response.data.find(b => b.id === bookingId);
         
@@ -89,7 +89,6 @@ export default function BookingDetails() {
           return;
         }
 
-        // Cache the fresh data
         localStorage.setItem('bookings_cache', JSON.stringify(response.data));
         
         const transformedBooking = transformBookingForUI(foundBooking);
@@ -108,7 +107,6 @@ export default function BookingDetails() {
     fetchBooking();
   }, [bookingId]);
 
-  // Get cached booking data from localStorage
   const getCachedBooking = (id) => {
     try {
       const cached = localStorage.getItem('bookings_cache');
@@ -123,18 +121,75 @@ export default function BookingDetails() {
     return null;
   };
 
-  // Handle action with optimistic updates
+  const getTentativeBooking = (id) => {
+    // Demo tentative bookings data - must match the structure expected by transformBookingForUI
+    const tentativeBookings = [
+      {
+        id: 'tentative-001',
+        title: 'Weekly Team Sync',
+        customer: 'John Smith',
+        customerName: 'John Smith',
+        customerEmail: 'john.smith@example.com',
+        resource: { name: 'Conference Room A' },
+        service: { name: 'Meeting Room Booking' },
+        location: { name: 'Main Office', address: '123 Business St' },
+        starts_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+        status: 'Tentative',
+        is_tentative: true,
+        is_canceled: false,
+        is_temporary: true,
+        notes: 'Awaiting confirmation from team members',
+        metadata: { notes: 'Awaiting confirmation from team members' },
+        price: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 'tentative-002',
+        title: 'Client Presentation Review',
+        customer: 'Sarah Johnson',
+        customerName: 'Sarah Johnson',
+        customerEmail: 'sarah.johnson@company.com',
+        resource: { name: 'Meeting Room B' },
+        service: { name: 'Presentation Room Booking' },
+        location: { name: 'Main Office', address: '123 Business St' },
+        starts_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        ends_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(),
+        status: 'Tentative',
+        is_tentative: true,
+        is_canceled: false,
+        is_temporary: true,
+        notes: 'Pending client availability confirmation',
+        metadata: { notes: 'Pending client availability confirmation' },
+        price: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ];
+
+    return tentativeBookings.find(booking => booking.id === id);
+  };
+
   const handleAction = async (action, newStatus) => {
     if (!booking) return;
 
     setActionLoading(action);
     
-    // Optimistic update
     const updatedBooking = { ...booking, status: newStatus };
     setBooking(updatedBooking);
 
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      setTimeout(() => {
+        setActionLoading(null);
+        alert(`Demo booking ${action.toLowerCase()} successfully!`);
+      }, 1000);
+      return;
+    }
+
     try {
-      // Map UI status to API fields for PATCH /update-booking/:id
       let updateData = {};
       
       if (newStatus === 'Confirmed') {
@@ -154,20 +209,14 @@ export default function BookingDetails() {
         };
       }
       
-      // Call API with correct field mapping
       await bookingAPI.updateBooking(booking.id, updateData);
-      
-      // Invalidate cache to force refresh on list page
       localStorage.removeItem('bookings_cache_valid');
       
-      // Track and notify
       trackEvent('booking_action', { bookingId, action });
-      showToast(`Booking ${action.toLowerCase()} successful`);
       
     } catch (err) {
-      // Revert optimistic update
       setBooking(booking);
-      showToast(`Failed to ${action.toLowerCase()} booking. Please try again.`, 'error');
+      
       console.error(`Error ${action}:`, err);
     } finally {
       setActionLoading(null);
@@ -179,11 +228,21 @@ export default function BookingDetails() {
 
     setActionLoading('save');
     
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      const updatedBooking = { ...booking, notes };
+      setBooking(updatedBooking);
+      setTimeout(() => {
+        setActionLoading(null);
+        alert('Demo booking notes saved successfully!');
+      }, 1000);
+      return;
+    }
+    
     try {
       const updatedBooking = { ...booking, notes };
       
-      // Save notes to API using PATCH /update-booking/:id
-      // Based on API doc, we can send any subset of booking fields
       const updateData = {
         notes: notes
       };
@@ -191,15 +250,12 @@ export default function BookingDetails() {
       await bookingAPI.updateBooking(booking.id, updateData);
       
       setBooking(updatedBooking);
-      
-      // Invalidate cache to force refresh on list page
       localStorage.removeItem('bookings_cache_valid');
       
       trackEvent('booking_action', { bookingId, action: 'save_notes' });
-      showToast('Notes saved successfully');
       
     } catch (err) {
-      showToast('Failed to save notes. Please try again.', 'error');
+      
       console.error('Error saving notes:', err);
     } finally {
       setActionLoading(null);
@@ -208,9 +264,52 @@ export default function BookingDetails() {
 
   const handleCancelBooking = async () => {
     if (!confirm('Are you sure you want to cancel this booking?')) return;
-    await handleAction('Cancel', 'Cancelled');
-  };
+    
+    if (!booking) return;
 
+    setActionLoading('Cancel');
+    
+    const updatedBooking = { ...booking, status: 'Cancelled' };
+    setBooking(updatedBooking);
+
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      setTimeout(() => {
+        setActionLoading(null);
+        alert('Demo booking cancelled successfully!');
+      }, 1000);
+      return;
+    }
+
+    try {
+      const response = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          booking_id: booking.id
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to cancel booking');
+      }
+      
+      localStorage.removeItem('bookings_cache_valid');
+      
+      trackEvent('booking_action', { bookingId: booking.id, action: 'cancel' });
+      
+    } catch (err) {
+      setBooking(booking);
+      
+      console.error('Error cancelling booking:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const handleBack = () => {
     navigate('/bookings', { 
@@ -218,7 +317,6 @@ export default function BookingDetails() {
     });
   };
 
-  // Retry mechanism
   const handleRetry = () => {
     window.location.reload();
   };
@@ -231,7 +329,6 @@ export default function BookingDetails() {
           <div className="flex-1 flex flex-col overflow-hidden">
             <main className="flex-1 overflow-y-auto p-6">
               <div className="max-w-6xl mx-auto">
-                {/* Back button */}
                 <button
                   onClick={handleBack}
                   className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-6 transition-colors"
@@ -241,7 +338,6 @@ export default function BookingDetails() {
                   Back to Bookings
                 </button>
 
-                {/* Card container */}
                 <div 
                   className="bg-white rounded-lg p-6"
                   style={{
@@ -358,7 +454,6 @@ export default function BookingDetails() {
         <div className="flex-1 flex flex-col overflow-hidden">
           <main className="flex-1 overflow-y-auto p-6">
             <div className="max-w-6xl mx-auto">
-              {/* Back button */}
               <button
                 onClick={handleBack}
                 className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-6 transition-colors duration-150"
@@ -374,7 +469,6 @@ export default function BookingDetails() {
                 Back to Bookings
               </button>
 
-              {/* Main details card */}
               <div 
                 className="bg-white rounded-lg transition-all duration-220 ease-out"
                 style={{
@@ -384,10 +478,8 @@ export default function BookingDetails() {
                   padding: '24px'
                 }}
               >
-                {/* Header section */}
                 <div className="flex items-start justify-between mb-8">
                   <div className="flex items-start gap-4">
-                    {/* 64x64 thumbnail */}
                     <div 
                       className="w-16 h-16 rounded flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: '#D3DAE6', borderRadius: '6px' }}
@@ -397,7 +489,6 @@ export default function BookingDetails() {
                       </div>
                     </div>
                     
-                    {/* Title block */}
                     <div>
                       <h1 
                         className="font-semibold mb-2" 
@@ -425,7 +516,6 @@ export default function BookingDetails() {
                     </div>
                   </div>
                   
-                  {/* Organizer */}
                   <div className="text-right">
                     <div className="flex items-center gap-2 text-gray-900">
                       <User className="w-4 h-4" />
@@ -436,11 +526,8 @@ export default function BookingDetails() {
                   </div>
                 </div>
 
-                {/* Main content grid */}
                 <div className="grid grid-cols-3" style={{ gap: '32px' }}>
-                  {/* Left column (2/3) */}
                   <div className="col-span-2 space-y-6">
-                    {/* Status section */}
                     <div>
                       <h3 
                         className="mb-2" 
@@ -467,7 +554,6 @@ export default function BookingDetails() {
                       </span>
                     </div>
 
-                    {/* Large time display */}
                     <div className="flex items-start gap-8 py-8">
                       <div className="text-left">
                         <div 
@@ -507,7 +593,6 @@ export default function BookingDetails() {
                       </div>
                     </div>
 
-                    {/* Duration */}
                     <div>
                       <h3 
                         className="mb-2" 
@@ -532,7 +617,6 @@ export default function BookingDetails() {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div>
                       <h3 
                         className="mb-3" 
@@ -578,7 +662,6 @@ export default function BookingDetails() {
                       </div>
                     </div>
 
-                    {/* Notes section */}
                     <div>
                       <div className="flex items-center justify-between mb-3" style={{ width: '70%' }}>
                         <h3 
@@ -629,7 +712,6 @@ export default function BookingDetails() {
                         />
                       )}
                       
-                      {/* Cancel and Save buttons - always visible */}
                       <div className="flex gap-3 justify-end mt-3" style={{ width: '70%' }}>
                         <button
                           onClick={handleCancelBooking}
@@ -665,7 +747,6 @@ export default function BookingDetails() {
                     </div>
                   </div>
 
-                  {/* Right column (1/3) - Availability rail */}
                   <div>
                     <h3 
                       className="mb-4" 
@@ -678,7 +759,6 @@ export default function BookingDetails() {
                       Availability
                     </h3>
                     
-                    {/* Scrollable 24-hour container */}
                     <div 
                       className="bg-white border rounded overflow-y-auto"
                       style={{
@@ -689,17 +769,13 @@ export default function BookingDetails() {
                     >
                       <div className="p-3">
                         {(() => {
-                          // Generate all 24 hours
                           const bookingStart = new Date(booking.starts_at);
                           const bookingEnd = new Date(booking.ends_at);
                           const bookingStartHour = bookingStart.getHours();
-                          const bookingStartMinutes = bookingStart.getMinutes();
                           const bookingEndHour = bookingEnd.getHours();
-                          const bookingEndMinutes = bookingEnd.getMinutes();
                           
                           const timeSlots = [];
                           
-                          // Create all 24 hour slots (0-23)
                           for (let hour = 0; hour < 24; hour++) {
                             let displayHour, ampm;
                             
@@ -719,13 +795,10 @@ export default function BookingDetails() {
                             
                             const timeLabel = `${displayHour} ${ampm}`;
                             
-                            // Check if this hour is within the booking range
                             let isBooked = false;
                             if (bookingStartHour === bookingEndHour) {
-                              // Same hour booking
                               isBooked = hour === bookingStartHour;
                             } else {
-                              // Multi-hour booking
                               isBooked = hour >= bookingStartHour && hour < bookingEndHour;
                             }
                             
@@ -742,7 +815,6 @@ export default function BookingDetails() {
                               className="flex items-center gap-3 mb-1"
                               style={{ fontFamily: 'Inter' }}
                             >
-                              {/* Time label */}
                               <span 
                                 className="w-12 text-left text-sm"
                                 style={{ 
@@ -755,7 +827,6 @@ export default function BookingDetails() {
                                 {label}
                               </span>
                               
-                              {/* Time slot bar */}
                               <div 
                                 className="flex-1 rounded-sm transition-all duration-200"
                                 style={{

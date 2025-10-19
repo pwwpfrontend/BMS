@@ -781,10 +781,41 @@ function FeaturesTab({ resource }) {
 function LimitationsTab({ resource }) {
     const [expandedSections, setExpandedSections] = useState({
       availableTimes: true,
-      capacity: true,
-      duration: true,
-      customerTeams: true
+      duration: true
     });
+
+    const [availabilityGrid, setAvailabilityGrid] = useState(() => {
+      // 24 hours x 7 days, default to 9-18 for Mon-Fri
+      const grid = Array.from({ length: 24 }, () => Array(7).fill(false));
+      // Set default 9-18 for Monday to Friday (9 to 18 inclusive)
+      for (let d = 0; d < 5; d++) {
+        for (let h = 9; h <= 18; h++) {
+          grid[h][d] = true;
+        }
+      }
+      return grid;
+    });
+
+    const [durationState, setDurationState] = useState({
+      maxMode: 'no-limit', // 'no-limit' | 'reject-over'
+      maxMinutes: 60,
+      maxUnit: 'minutes',
+      minMode: 'no-min', // 'no-min' | 'reject-under'
+      minMinutes: 60,
+      minUnit: 'minutes',
+      intervalMode: 'any', // 'any' | 'fixed'
+      intervalMinutes: 60,
+      intervalUnit: 'minutes'
+    });
+
+    const [showDropdown, setShowDropdown] = useState({
+      max: false,
+      min: false,
+      interval: false
+    });
+
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState(null);
   
     const toggleSection = (section) => {
       setExpandedSections(prev => ({
@@ -792,6 +823,101 @@ function LimitationsTab({ resource }) {
         [section]: !prev[section]
       }));
     };
+
+    const toggleCell = (hourIndex, dayIndex) => {
+      setAvailabilityGrid(prev => {
+        const next = prev.map(row => row.slice());
+        next[hourIndex][dayIndex] = !next[hourIndex][dayIndex];
+        return next;
+      });
+    };
+
+    const handleMouseDown = (hourIndex, dayIndex) => {
+      setIsDragging(true);
+      // Store the original state before toggling
+      const originalState = availabilityGrid[hourIndex][dayIndex];
+      setDragStart({ hour: hourIndex, day: dayIndex, originalState });
+      toggleCell(hourIndex, dayIndex);
+    };
+
+    const handleMouseEnter = (hourIndex, dayIndex) => {
+      if (isDragging && dragStart) {
+        const startHour = Math.min(dragStart.hour, hourIndex);
+        const endHour = Math.max(dragStart.hour, hourIndex);
+        const startDay = Math.min(dragStart.day, dayIndex);
+        const endDay = Math.max(dragStart.day, dayIndex);
+        
+        setAvailabilityGrid(prev => {
+          const next = prev.map(row => row.slice());
+          // Use the original state to determine if we're selecting or deselecting
+          const targetValue = !dragStart.originalState;
+          
+          for (let h = startHour; h <= endHour; h++) {
+            for (let d = startDay; d <= endDay; d++) {
+              next[h][d] = targetValue;
+            }
+          }
+          return next;
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setDragStart(null);
+    };
+
+    const toggleDropdown = (type) => {
+      setShowDropdown(prev => ({
+        ...prev,
+        [type]: !prev[type]
+      }));
+    };
+
+    const selectUnit = (type, unit) => {
+      setDurationState(prev => ({
+        ...prev,
+        [`${type}Unit`]: unit
+      }));
+      setShowDropdown(prev => ({
+        ...prev,
+        [type]: false
+      }));
+    };
+
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+      const handleClickOutside = (event) => {
+        if (!event.target.closest('.relative')) {
+          setShowDropdown({
+            max: false,
+            min: false,
+            interval: false
+          });
+        }
+      };
+      
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const applyPreset = (preset) => {
+      setAvailabilityGrid(prev => {
+        const next = Array.from({ length: 24 }, () => Array(7).fill(false));
+        const setRange = (dayIdx, startHour, endHour) => {
+          for (let h = startHour; h <= endHour; h++) next[h][dayIdx] = true;
+        };
+        if (preset === 'monfri') {
+          for (let d = 0; d < 5; d++) setRange(d, 9, 18); // 09:00-18:00 Mon-Fri (inclusive)
+        } else if (preset === 'everyday') {
+          for (let d = 0; d < 7; d++) setRange(d, 9, 18);
+        }
+        return next;
+      });
+    };
+
+    const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   
     return (
       <div className="space-y-4">
@@ -803,7 +929,7 @@ function LimitationsTab({ resource }) {
           >
             <div className="text-left">
               <h3 className="font-semibold text-gray-900">Available times and days</h3>
-              <p className="text-sm text-gray-500">Set the times of the day and days of the week when this resource available.</p>
+              <p className="text-sm text-gray-500">Set the times of the day and days of the week when this resource is available.</p>
             </div>
             <svg 
               className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.availableTimes ? 'rotate-180' : ''}`}
@@ -817,107 +943,79 @@ function LimitationsTab({ resource }) {
           
           {expandedSections.availableTimes && (
             <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-end gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm text-gray-600 mb-2">Select custom dates</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Select custom dates"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+              <div className="flex items-center gap-2 mb-4">
+                <button onClick={() => applyPreset('monfri')} className="px-3 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50">Mon–Fri</button>
+                <button onClick={() => applyPreset('everyday')} className="px-3 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50">Every day</button>
                 </div>
                 
-                <div className="flex-1">
-                  <label className="block text-sm text-gray-600 mb-2">Start time</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Start time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                </div>
-                
-                <div className="flex-1">
-                  <label className="block text-sm text-gray-600 mb-2">End time</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="End time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                </div>
-                
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                  Save
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-  
-        {/* Capacity */}
-        <div className="border border-gray-200 rounded-lg">
-          <button 
-            onClick={() => toggleSection('capacity')}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50"
-          >
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900">Capacity</h3>
-              <p className="text-sm text-gray-500">This parameter let you set how many people can be accommodated in this resource</p>
-            </div>
-            <svg 
-              className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.capacity ? 'rotate-180' : ''}`}
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          
-          {expandedSections.capacity && (
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Capacity</label>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      value={resource.limitations?.capacity || 20}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-600">persons</span>
+              <div className="overflow-x-auto">
+                <table className="min-w-full border border-gray-200 rounded-md bg-white">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="w-14 px-2 py-2 text-xs font-medium text-gray-600 text-left">Time</th>
+                      {days.map((d) => (
+                        <th key={d} className="px-2 py-2 text-xs font-medium text-gray-600 text-center">{d}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                  >
+                    {hours.map((h, rowIdx) => (
+                      <tr key={h} className="border-t border-gray-100">
+                        <td className="px-2 py-1 text-xs text-gray-500">{h}:00</td>
+                        {days.map((_, colIdx) => {
+                          const active = availabilityGrid[rowIdx][colIdx];
+                          return (
+                            <td key={`${rowIdx}-${colIdx}`} className="px-2 py-2 text-center">
+                              <button
+                                type="button"
+                                onMouseDown={() => handleMouseDown(rowIdx, colIdx)}
+                                onMouseEnter={() => handleMouseEnter(rowIdx, colIdx)}
+                                className={`w-20 h-10 rounded border transition-colors relative ${
+                                  active 
+                                    ? 'bg-blue-500 border-blue-600 hover:bg-blue-600' 
+                                    : 'bg-gray-100 border-gray-200 hover:bg-gray-200'
+                                }`}
+                                aria-label={`Toggle ${days[colIdx]} ${h}:00`}
+                              >
+                                {(() => {
+                                  // Check if this is the first selected cell in this column
+                                  const isFirstInColumn = active && (rowIdx === 0 || !availabilityGrid[rowIdx - 1][colIdx]);
+                                  if (isFirstInColumn) {
+                                    // Find the last selected hour in this column
+                                    let lastSelectedHour = rowIdx;
+                                    for (let checkHour = rowIdx + 1; checkHour < 24; checkHour++) {
+                                      if (availabilityGrid[checkHour][colIdx]) {
+                                        lastSelectedHour = checkHour;
+                                      } else {
+                                        break;
+                                      }
+                                    }
+                                    // Only show time range if there's more than one hour selected or if it's a single hour
+                                    const startTime = `${rowIdx.toString().padStart(2, '0')}:00`;
+                                    const endTime = `${lastSelectedHour.toString().padStart(2, '0')}:00`;
+                                    return (
+                                      <span className="absolute inset-0 flex items-center justify-center text-white text-xs font-medium leading-tight">
+                                        {startTime}-{endTime}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
                   </div>
                   
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2">
-                      <div className="relative inline-block w-11 h-6">
-                        <input type="checkbox" className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-5 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-                      </div>
-                      <span className="text-sm text-gray-600">Limit the number of guests in each booking based on the capacity.</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex justify-end">
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                  Save
-                </button>
+              <div className="flex justify-end mt-4">
+                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Save</button>
               </div>
             </div>
           )}
@@ -931,7 +1029,7 @@ function LimitationsTab({ resource }) {
           >
             <div className="text-left">
               <h3 className="font-semibold text-gray-900">Duration</h3>
-              <p className="text-sm text-gray-500">These parameters let you control how long or short bookings can be and the times they can start and end.</p>
+              <p className="text-sm text-gray-500">Control how long or short bookings can be and the times they can start and end.</p>
             </div>
             <svg 
               className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.duration ? 'rotate-180' : ''}`}
@@ -945,133 +1043,258 @@ function LimitationsTab({ resource }) {
           
           {expandedSections.duration && (
             <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-gray-900">Maximum duration</div>
+                  <label className="flex items-center gap-2 text-sm">
                   <input
-                    type="text"
-                    value="MORNING (9AM - 1PM)"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Time:</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value="09:00 am"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      type="radio"
+                      name="maxDuration"
+                      checked={durationState.maxMode === 'no-limit'}
+                      onChange={() => setDurationState(prev => ({ ...prev, maxMode: 'no-limit' }))}
+                      className="w-4 h-4 text-blue-600"
                     />
-                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">End Time:</label>
-                  <div className="relative">
+                    
+Bookings for this resource can be as long as needed..
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
                     <input
-                      type="text"
-                      value="13:00 pm"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      type="radio"
+                      name="maxDuration"
+                      checked={durationState.maxMode === 'reject-over'}
+                      onChange={() => setDurationState(prev => ({ ...prev, maxMode: 'reject-over' }))}
+                      className="w-4 h-4 text-blue-600"
                     />
-                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex gap-2 mb-4">
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-white bg-white">
-                  <Plus className="w-4 h-4" />
-                  Add Slot
-                </button>
-                <button className="px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 bg-white">
-                  MORNING (9AM - 1PM)
-                </button>
-                <button className="px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 bg-white">
-                  AFTERNOON (1PM - 6PM)
-                </button>
-                <button className="px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 bg-white">
-                  FULL DAY (9AM - 6PM)
-                </button>
-              </div>
-              
-              <div className="flex justify-end">
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                  Save
-                </button>
-              </div>
-            </div>
-          )}
+                    Reject bookings longer than
+                    <div className="inline-flex items-center ml-2 relative">
+                      <div className="flex items-center border border-gray-300 rounded text-sm overflow-hidden">
+                        <input
+                          type="number"
+                          value={durationState.maxMinutes}
+                          onChange={(e) => setDurationState(prev => ({ ...prev, maxMinutes: parseInt(e.target.value) || 60 }))}
+                          className="w-16 px-3 py-1 border-0 focus:outline-none focus:ring-0"
+                          disabled={durationState.maxMode !== 'reject-over'}
+                          min="1"
+                        />
+                        <div className="border-l border-gray-300">
+                          <button
+                            type="button"
+                            onClick={() => toggleDropdown('max')}
+                            disabled={durationState.maxMode !== 'reject-over'}
+                            className="px-3 py-1 focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 hover:bg-gray-50"
+                          >
+                            {durationState.maxUnit}
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      {showDropdown.max && (
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-10 min-w-[120px]">
+                          <div className="p-2">
+                            <div className="text-xs font-medium text-gray-500 mb-2">Maximum duration</div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => selectUnit('max', 'minutes')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.maxUnit === 'minutes' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                minutes
+                              </button>
+                              <button
+                                onClick={() => selectUnit('max', 'hours')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.maxUnit === 'hours' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                hours
+                              </button>
+                              <button
+                                onClick={() => selectUnit('max', 'days')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.maxUnit === 'days' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                days
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </label>
         </div>
   
-        {/* Customer and teams */}
-        <div className="border border-gray-200 rounded-lg">
-          <button 
-            onClick={() => toggleSection('customerTeams')}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50"
-          >
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900">Customer and teams</h3>
-              <p className="text-sm text-gray-500">Set which types of members and teams can make bookings for this resource.</p>
-            </div>
-            <svg 
-              className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.customerTeams ? 'rotate-180' : ''}`}
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          
-          {expandedSections.customerTeams && (
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="grid grid-cols-2 gap-6 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">This Resource can be booked by:</label>
-                  <div className="space-y-2 mb-4">
-                    <label className="flex items-center gap-2">
-                      <input type="radio" name="booking" defaultChecked className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm">All Customers</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="radio" name="booking" className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm">Customers with active Plan</span>
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-gray-900">Minimum duration</div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="minDuration"
+                      checked={durationState.minMode === 'no-min'}
+                      onChange={() => setDurationState(prev => ({ ...prev, minMode: 'no-min' }))}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    Bookings for this resource can be as short as needed.
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="minDuration"
+                      checked={durationState.minMode === 'reject-under'}
+                      onChange={() => setDurationState(prev => ({ ...prev, minMode: 'reject-under' }))}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    Reject bookings shorter than
+                    <div className="inline-flex items-center ml-2 relative">
+                      <div className="flex items-center border border-gray-300 rounded text-sm overflow-hidden">
+                        <input
+                          type="number"
+                          value={durationState.minMinutes}
+                          onChange={(e) => setDurationState(prev => ({ ...prev, minMinutes: parseInt(e.target.value) || 60 }))}
+                          className="w-16 px-3 py-1 border-0 focus:outline-none focus:ring-0"
+                          disabled={durationState.minMode !== 'reject-under'}
+                          min="1"
+                        />
+                        <div className="border-l border-gray-300">
+                          <button
+                            type="button"
+                            onClick={() => toggleDropdown('min')}
+                            disabled={durationState.minMode !== 'reject-under'}
+                            className="px-3 py-1 focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 hover:bg-gray-50"
+                          >
+                            {durationState.minUnit}
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      {showDropdown.min && (
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-10 min-w-[120px]">
+                          <div className="p-2">
+                            <div className="text-xs font-medium text-gray-500 mb-2">Minimum duration</div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => selectUnit('min', 'minutes')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.minUnit === 'minutes' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                minutes
+                              </button>
+                              <button
+                                onClick={() => selectUnit('min', 'hours')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.minUnit === 'hours' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                hours
+                              </button>
+                              <button
+                                onClick={() => selectUnit('min', 'days')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.minUnit === 'days' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                days
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     </label>
                   </div>
                   
-                  <div className="flex flex-wrap gap-2">
-                    <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm">
-                      InnoPeers - CUHK InnoPort
-                      <button className="text-gray-400 hover:text-gray-600">×</button>
-                    </span>
-                    <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm">
-                      InnoBuddies - CUHK
-                      <button className="text-gray-400 hover:text-gray-600">×</button>
-                    </span>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Restrict the teams which can book this resource to:</label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                    <option>Members of any team</option>
-                  </select>
-                </div>
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-gray-900">Fixed interval</div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="interval"
+                      checked={durationState.intervalMode === 'any'}
+                      onChange={() => setDurationState(prev => ({ ...prev, intervalMode: 'any' }))}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    Bookings for this resource can be made in any time interval.
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="interval"
+                      checked={durationState.intervalMode === 'fixed'}
+                      onChange={() => setDurationState(prev => ({ ...prev, intervalMode: 'fixed' }))}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    Bookings for this resource must be made in
+                    <div className="inline-flex items-center ml-2 relative">
+                      <div className="flex items-center border border-gray-300 rounded text-sm overflow-hidden">
+                        <input
+                          type="number"
+                          value={durationState.intervalMinutes}
+                          onChange={(e) => setDurationState(prev => ({ ...prev, intervalMinutes: parseInt(e.target.value) || 60 }))}
+                          className="w-16 px-3 py-1 border-0 focus:outline-none focus:ring-0"
+                          disabled={durationState.intervalMode !== 'fixed'}
+                          min="1"
+                        />
+                        <div className="border-l border-gray-300">
+                          <button
+                            type="button"
+                            onClick={() => toggleDropdown('interval')}
+                            disabled={durationState.intervalMode !== 'fixed'}
+                            className="px-3 py-1 focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 hover:bg-gray-50"
+                          >
+                            {durationState.intervalUnit}
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      {showDropdown.interval && (
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-10 min-w-[120px]">
+                          <div className="p-2">
+                            <div className="text-xs font-medium text-gray-500 mb-2">Fixed interval</div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => selectUnit('interval', 'minutes')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.intervalUnit === 'minutes' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                minutes
+                              </button>
+                              <button
+                                onClick={() => selectUnit('interval', 'hours')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.intervalUnit === 'hours' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                hours
+                              </button>
+                              <button
+                                onClick={() => selectUnit('interval', 'days')}
+                                className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 ${
+                                  durationState.intervalUnit === 'days' ? 'bg-blue-50 text-blue-600' : ''
+                                }`}
+                              >
+                                days
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    intervals.
+                  </label>
               </div>
               
               <div className="flex justify-end">
-                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                  Save
-                </button>
+                  <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Save</button>
+                </div>
               </div>
             </div>
           )}

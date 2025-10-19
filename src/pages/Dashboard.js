@@ -21,17 +21,53 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [bookingsResponse, cancelledResponse, resourcesResponse] = await Promise.all([
-          bookingAPI.getAllBookings(false),
-          bookingAPI.getCancelledBookings(),
+        
+        const [bookingsResponse, resourcesResponse] = await Promise.all([
+          bookingAPI.getAllBookings(true),
           bookingAPI.getResources()
         ]);
         
-        const transformedBookings = bookingsResponse.data.map(transformBookingForUI);
-        const transformedCancelled = cancelledResponse.data.map(transformBookingForUI);
+        // Fetch cancelled booking IDs from the cancelled-meeting API
+        const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        let cancelledBookingIds = [];
+        if (cancelledResponse.ok) {
+          const cancelledData = await cancelledResponse.json();
+          cancelledBookingIds = cancelledData
+            .map(item => item.booking_id)
+            .filter(id => id);
+        }
+
+        console.log(`📋 Dashboard: Found ${cancelledBookingIds.length} cancelled booking IDs`);
+
+        // Transform all bookings
+        const allTransformedBookings = bookingsResponse.data.map(transformBookingForUI);
         
-        setBookings(transformedBookings);
-        setCancelledBookings(transformedCancelled);
+        // Separate cancelled and active bookings
+        const cancelled = [];
+        const active = [];
+        
+        allTransformedBookings.forEach(booking => {
+          if (cancelledBookingIds.includes(booking.id)) {
+            cancelled.push({
+              ...booking,
+              status: 'Cancelled',
+              is_canceled: true
+            });
+          } else if (!booking.is_canceled) {
+            active.push(booking);
+          }
+        });
+        
+        console.log(`✅ Dashboard: Active bookings: ${active.length}, Cancelled: ${cancelled.length}`);
+        
+        setBookings(active);
+        setCancelledBookings(cancelled);
         setResources(resourcesResponse.data || []);
       } catch (err) {
         setError('Failed to fetch data');
@@ -44,7 +80,6 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  // Get current week dates
   const getCurrentWeekDates = () => {
     const today = new Date();
     const currentDay = today.getDay();
@@ -52,7 +87,7 @@ export default function Dashboard() {
     const monday = new Date(today.setDate(diff));
     
     const weekDates = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 7; i++) {
       const date = new Date(monday);
       date.setDate(monday.getDate() + i);
       weekDates.push(date);
@@ -60,13 +95,29 @@ export default function Dashboard() {
     return weekDates;
   };
 
-  // Calculate statistics
+  const getCurrentMonth = () => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return monthNames[new Date().getMonth()];
+  };
+
+  const getCurrentMonthBookings = () => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    
+    return bookings.filter(b => {
+      if (!b.starts_at) return false;
+      const bookingDate = new Date(b.starts_at);
+      return bookingDate.getMonth() === currentMonth && 
+             bookingDate.getFullYear() === currentYear &&
+             b.status === 'Confirmed';
+    }).length;
+  };
+
   const totalBookings = bookings.length;
-  const confirmedBookings = bookings.filter(b => b.status === 'Confirmed').length;
+  const currentMonthConfirmedBookings = getCurrentMonthBookings();
   const totalResources = resources.length;
   const uniqueCustomers = new Set(bookings.map(b => b.customer).filter(c => c && c !== 'N/A')).size;
 
-  // Generate chart data from actual bookings
   const generateChartData = () => {
     const weekDates = getCurrentWeekDates();
     
@@ -98,27 +149,24 @@ export default function Dashboard() {
 
   const chartData = generateChartData();
   
-  // Calculate dynamic Y-axis range based on actual data
   const dataValues = chartData.map(d => d.value);
   const maxDataValue = Math.max(...dataValues, 0);
   
-  // Better Y-axis scaling for better visualization
   let yAxisMax;
   if (maxDataValue === 0) {
-    yAxisMax = 4; // Show 0-4 range when no data
+    yAxisMax = 4;
   } else if (maxDataValue <= 3) {
-    yAxisMax = 6; // Show 0-6 range for small values
+    yAxisMax = 6;
   } else if (maxDataValue <= 10) {
-    yAxisMax = Math.ceil(maxDataValue * 1.5); // 50% padding for medium values
+    yAxisMax = Math.ceil(maxDataValue * 1.5);
   } else {
-    yAxisMax = Math.ceil(maxDataValue * 1.3); // 30% padding for larger values
+    yAxisMax = Math.ceil(maxDataValue * 1.3);
   }
   
   const yAxisMin = 0;
   const yAxisRange = yAxisMax - yAxisMin;
   const yAxisStep = yAxisRange / 3;
   
-  // Generate 4 Y-axis labels
   const yAxisLabels = [
     Math.round(yAxisMax),
     Math.round(yAxisMax - yAxisStep),
@@ -126,7 +174,6 @@ export default function Dashboard() {
     yAxisMin
   ];
 
-  // Filter bookings for table
   const filteredBookings = bookings.filter(booking => {
     let matchesDate = true;
     let matchesStatus = true;
@@ -149,11 +196,9 @@ export default function Dashboard() {
 
   const recentBookings = filteredBookings.slice(0, 6);
   
-  // Filter cancelled bookings based on filter
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   
-  // Get start of current week (Monday)
   const startOfWeek = new Date(today);
   const day = startOfWeek.getDay();
   const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
@@ -168,7 +213,6 @@ export default function Dashboard() {
     if (cancelledFilter === 'today') {
       return bookingDateStr === todayStr;
     } else {
-      // This week filter - show all cancelled bookings from Monday to today
       return bookingDate >= startOfWeek && bookingDate <= today;
     }
   });
@@ -210,24 +254,21 @@ export default function Dashboard() {
               <p className="text-sm text-gray-500 mt-1">Overview of all of recent bookings, inventory and plans</p>
             </div>
 
-            {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {/* Recent Bookings Card */}
               <div 
                 onClick={() => navigate('/bookings')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="text-sm text-gray-600">Recent Bookings</div>
-                  <div className="text-xs text-gray-400">Oct</div>
+                  <div className="text-xs text-gray-400">{getCurrentMonth()}</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{confirmedBookings}</div>
+                  <div className="text-3xl font-semibold text-gray-900">{currentMonthConfirmedBookings}</div>
                   <Calendar className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
                 </div>
               </div>
 
-              {/* Total Customers Card */}
               <div 
                 onClick={() => navigate('/customers')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
@@ -241,7 +282,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Total Resources Card */}
               <div 
                 onClick={() => navigate('/resources')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
@@ -255,7 +295,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Plans Card */}
               <div 
                 onClick={() => navigate('/plans')}
                 className="bg-[#214BAE] rounded-lg p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
@@ -270,9 +309,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-              {/* Resource Usage Chart */}
               <div className="lg:col-span-2">
                 <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
                   <div className="flex items-center justify-between mb-6">
@@ -294,25 +331,20 @@ export default function Dashboard() {
                     </div>
                   </div>
                   
-                  {/* Chart */}
                   <div className="relative" style={{ height: '260px', paddingLeft: '40px', paddingBottom: '32px' }}>
-                    {/* Y-axis labels */}
                     <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-sm text-gray-500 font-medium">
                       {yAxisLabels.map((label, i) => (
                         <span key={i}>{label}</span>
                       ))}
                     </div>
                     
-                    {/* Chart area with grid */}
                     <div className="h-full relative" style={{ paddingBottom: '32px' }}>
-                      {/* Horizontal grid lines */}
                       <div className="absolute inset-0 bottom-8 flex flex-col justify-between">
                         {yAxisLabels.map((val, i) => (
                           <div key={i} className="border-t border-dashed border-gray-200"></div>
                         ))}
                       </div>
                       
-                      {/* Line chart SVG */}
                       <svg className="absolute inset-0 w-full bottom-8" style={{ height: 'calc(100% - 32px)' }} preserveAspectRatio="none">
                         <defs>
                           <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -321,7 +353,6 @@ export default function Dashboard() {
                           </linearGradient>
                         </defs>
                         
-                        {/* Smooth curved line using cubic bezier for better interpolation */}
                         <path
                           fill="none"
                           stroke="url(#lineGradient)"
@@ -347,7 +378,6 @@ export default function Dashboard() {
                               return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
                             }
                             
-                            // Create smooth curve using Catmull-Rom spline approximation
                             let path = `M ${points[0].x},${points[0].y}`;
                             
                             for (let i = 0; i < points.length - 1; i++) {
@@ -356,7 +386,6 @@ export default function Dashboard() {
                               const p2 = points[i + 1];
                               const p3 = points[Math.min(points.length - 1, i + 2)];
                               
-                              // Control points for cubic bezier
                               const cp1x = p1.x + (p2.x - p0.x) / 6;
                               const cp1y = p1.y + (p2.y - p0.y) / 6;
                               const cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -368,12 +397,8 @@ export default function Dashboard() {
                             return path;
                           })()}
                         />
-                        
-                        {/* Data points */}
-                        
                       </svg>
                       
-                      {/* X-axis labels */}
                       <div className="absolute bottom-0 left-0 right-0 flex justify-between text-sm text-gray-500 font-medium">
                         {chartData.map((item, i) => (
                           <span key={i} className="text-center">{item.label}</span>
@@ -384,7 +409,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Cancelled Bookings */}
               <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 flex flex-col">
                 <div className="flex items-center justify-between mb-5">
                   <h3 className="text-lg font-semibold text-gray-900">Cancelled Bookings</h3>
@@ -430,7 +454,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Recent Bookings Table */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">

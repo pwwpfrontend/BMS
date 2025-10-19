@@ -159,22 +159,81 @@ class BookingAPI {
     });
   }
 
-  // Availability checking
-  async checkAvailability(availabilityData) {
-    return this.apiRequest('/check-availability', {
-      method: 'POST',
-      body: JSON.stringify(availabilityData),
-    });
+  // Check availability by comparing with existing bookings (client-side)
+  async checkAvailability(resourceId, startTime, endTime) {
+    try {
+      const response = await this.getAllBookings();
+      const resourceBookings = response.data.filter(booking => 
+        booking.resource.id === resourceId && !booking.is_canceled
+      );
+      
+      // Check for time conflicts
+      const hasConflict = resourceBookings.some(booking => {
+        const bookingStart = new Date(booking.starts_at);
+        const bookingEnd = new Date(booking.ends_at);
+        const requestStart = new Date(startTime);
+        const requestEnd = new Date(endTime);
+        
+        return (requestStart < bookingEnd && requestEnd > bookingStart);
+      });
+      
+      return { available: !hasConflict, conflicts: hasConflict ? resourceBookings : [] };
+    } catch (error) {
+      console.error('Availability check failed:', error);
+      throw error;
+    }
   }
 
-  // Get open slots for a resource
-  async getOpenSlots(resourceId, date, duration) {
-    const params = new URLSearchParams({ 
-      resource_id: resourceId,
-      date: date,
-      duration: duration 
-    });
-    return this.apiRequest(`/open-slots?${params.toString()}`);
+  // Get available time slots based on schedule blocks and existing bookings
+  async getAvailableSlots(resourceId, date) {
+    try {
+      // Get schedule blocks for the resource
+      const scheduleResponse = await this.getScheduleBlocks(resourceId);
+      const scheduleBlocks = scheduleResponse.data || [];
+      
+      // Get existing bookings for the date
+      const bookingsResponse = await this.getAllBookings();
+      const dayBookings = bookingsResponse.data.filter(booking => {
+        const bookingDate = new Date(booking.starts_at).toISOString().split('T')[0];
+        return bookingDate === date && booking.resource.id === resourceId && !booking.is_canceled;
+      });
+      
+      // Find available slots within schedule blocks
+      const availableSlots = [];
+      
+      scheduleBlocks.forEach(block => {
+        const blockDate = new Date(block.starts_at).toISOString().split('T')[0];
+        if (blockDate === date && block.is_available) {
+          // Generate hourly slots within this block
+          const blockStart = new Date(block.starts_at);
+          const blockEnd = new Date(block.ends_at);
+          
+          for (let time = new Date(blockStart); time < blockEnd; time.setHours(time.getHours() + 1)) {
+            const slotEnd = new Date(time.getTime() + 60 * 60 * 1000); // 1 hour later
+            
+            // Check if this slot conflicts with existing bookings
+            const hasConflict = dayBookings.some(booking => {
+              const bookingStart = new Date(booking.starts_at);
+              const bookingEnd = new Date(booking.ends_at);
+              return (time < bookingEnd && slotEnd > bookingStart);
+            });
+            
+            if (!hasConflict && slotEnd <= blockEnd) {
+              availableSlots.push({
+                start: time.toISOString(),
+                end: slotEnd.toISOString(),
+                duration: 'PT1H'
+              });
+            }
+          }
+        }
+      });
+      
+      return { data: availableSlots };
+    } catch (error) {
+      console.error('Failed to get available slots:', error);
+      throw error;
+    }
   }
 }
 

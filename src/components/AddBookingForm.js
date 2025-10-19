@@ -1,11 +1,260 @@
-import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Building, Settings, User } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Calendar, Clock, MapPin, Building, Settings, User, Upload } from 'lucide-react';
 import bookingAPI from '../services/bookingApi';
+import imageAPI from '../services/imageApi';
+import customerAPI from '../services/customerApi';
+
+// Inline Time Picker Component with Availability Check
+function TimePickerInline({ value, onChange, onClose, availableTimeSlots = [] }) {
+  const [hour, setHour] = useState(() => {
+    const [h, m] = value.split(':').map(Number);
+    return h % 12 === 0 ? 12 : h % 12;
+  });
+  const [minute, setMinute] = useState(() => {
+    const [h, m] = value.split(':').map(Number);
+    return Math.round(m / 15) * 15;
+  });
+  const [period, setPeriod] = useState(() => {
+    const [h, m] = value.split(':').map(Number);
+    return h >= 12 ? 'PM' : 'AM';
+  });
+
+  const hourRef = useRef(null);
+  const minuteRef = useRef(null);
+  const periodRef = useRef(null);
+
+  const hours = Array.from({ length: 12 }, (_, i) => (i === 0 ? 12 : i));
+  const minutes = [0, 15, 30, 45];
+  const periods = ['AM', 'PM'];
+
+  // Check if a time slot is available
+  const isTimeAvailable = (h, m, p) => {
+    if (availableTimeSlots.length === 0) return true;
+    
+    let h24 = h;
+    if (p === 'PM' && h !== 12) h24 += 12;
+    if (p === 'AM' && h === 12) h24 = 0;
+    
+    const timeStr = `${h24.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    return availableTimeSlots.includes(timeStr);
+  };
+
+  // Scroll to center on mount
+  useEffect(() => {
+    const scrollToCenter = (ref, items, selectedValue) => {
+      if (!ref.current) return;
+      const index = items.indexOf(selectedValue);
+      const itemHeight = 44;
+      const containerHeight = 176;
+      const centerOffset = (containerHeight - itemHeight) / 2;
+      ref.current.scrollTop = index * itemHeight - centerOffset;
+    };
+
+    setTimeout(() => {
+      scrollToCenter(hourRef, hours, hour);
+      scrollToCenter(minuteRef, minutes, minute);
+      scrollToCenter(periodRef, periods, period);
+    }, 0);
+  }, []);
+
+  const handleScroll = (ref, items, setter) => {
+    if (!ref.current) return;
+    const itemHeight = 44;
+    const containerHeight = 176;
+    const centerOffset = (containerHeight - itemHeight) / 2;
+    const scrollTop = ref.current.scrollTop;
+    const index = Math.round((scrollTop + centerOffset) / itemHeight);
+    const clamped = Math.max(0, Math.min(index, items.length - 1));
+    setter(items[clamped]);
+  };
+
+  const handleItemClick = (items, value, setter, ref) => {
+    setter(value);
+    if (ref.current) {
+      const index = items.indexOf(value);
+      const itemHeight = 44;
+      const containerHeight = 176;
+      const centerOffset = (containerHeight - itemHeight) / 2;
+      ref.current.scrollTop = index * itemHeight - centerOffset;
+    }
+  };
+
+  const handleConfirm = () => {
+    if (!isTimeAvailable(hour, minute, period)) {
+      alert('This time slot is not available. Please select another time.');
+      return;
+    }
+
+    let h24 = hour;
+    if (period === 'PM' && hour !== 12) h24 += 12;
+    if (period === 'AM' && hour === 12) h24 = 0;
+
+    const timeStr = `${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    onChange(timeStr);
+    onClose();
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-6 mt-2">
+      {/* Labels Row */}
+      <div className="flex justify-center gap-16 mb-4">
+        <div className="w-16 text-center">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Hour</p>
+        </div>
+        <div className="w-16 text-center">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Minute</p>
+        </div>
+        <div className="w-16 text-center">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Period</p>
+        </div>
+      </div>
+
+      {/* Time Picker Grid */}
+      <div className="flex justify-center gap-16 mb-6">
+        {/* Hour Column */}
+        <div className="w-16 h-44 overflow-y-scroll"
+          ref={hourRef}
+          onScroll={() => handleScroll(hourRef, hours, setHour)}
+          style={{
+            scrollBehavior: 'smooth',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          <style>{`
+            div[data-hour-ref]::-webkit-scrollbar {
+              display: none;
+            }
+          `}</style>
+          {hours.map((h) => {
+            const isAvailable = isTimeAvailable(h, minute, period);
+            return (
+              <button
+                key={h}
+                type="button"
+                onClick={() => {
+                  if (isAvailable) {
+                    handleItemClick(hours, h, setHour, hourRef);
+                  }
+                }}
+                disabled={!isAvailable}
+                className={`w-full h-11 flex items-center justify-center text-base font-semibold rounded transition-all duration-150 ${
+                  hour === h
+                    ? 'bg-blue-100 text-blue-600'
+                    : isAvailable
+                    ? 'text-gray-400 hover:text-gray-500'
+                    : 'text-gray-200 cursor-not-allowed'
+                }`}
+              >
+                {h.toString().padStart(2, '0')}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Minute Column */}
+        <div className="w-16 h-44 overflow-y-scroll"
+          ref={minuteRef}
+          onScroll={() => handleScroll(minuteRef, minutes, setMinute)}
+          style={{
+            scrollBehavior: 'smooth',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          {minutes.map((m) => {
+            const isAvailable = isTimeAvailable(hour, m, period);
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  if (isAvailable) {
+                    handleItemClick(minutes, m, setMinute, minuteRef);
+                  }
+                }}
+                disabled={!isAvailable}
+                className={`w-full h-11 flex items-center justify-center text-base font-semibold rounded transition-all duration-150 ${
+                  minute === m
+                    ? 'bg-blue-100 text-blue-600'
+                    : isAvailable
+                    ? 'text-gray-400 hover:text-gray-500'
+                    : 'text-gray-200 cursor-not-allowed'
+                }`}
+              >
+                {m.toString().padStart(2, '0')}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Period Column */}
+        <div className="w-16 h-44 overflow-y-scroll"
+          ref={periodRef}
+          onScroll={() => handleScroll(periodRef, periods, setPeriod)}
+          style={{
+            scrollBehavior: 'smooth',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          {periods.map((p) => {
+            const isAvailable = isTimeAvailable(hour, minute, p);
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  if (isAvailable) {
+                    handleItemClick(periods, p, setPeriod, periodRef);
+                  }
+                }}
+                disabled={!isAvailable}
+                className={`w-full h-11 flex items-center justify-center text-base font-semibold rounded transition-all duration-150 ${
+                  period === p
+                    ? 'bg-blue-100 text-blue-600'
+                    : isAvailable
+                    ? 'text-gray-400 hover:text-gray-500'
+                    : 'text-gray-200 cursor-not-allowed'
+                }`}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-2 pt-4 border-t border-gray-200">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          style={{ fontFamily: 'Inter' }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!isTimeAvailable(hour, minute, period)}
+          className="flex-1 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ fontFamily: 'Inter' }}
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function AddBookingForm({ onClose, onBookingCreated }) {
-  // Form state
   const [formData, setFormData] = useState({
-    location_id: '', // Will be auto-set to Hong Kong
+    location_id: '',
     resource_id: '',
     service_id: '',
     starts_at: '',
@@ -13,43 +262,139 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     date: '',
     start_time: '09:00',
     end_time: '10:00',
-    user_name: ''
+    customer_id: '',
+    customer_name: ''
   });
   
-  // Options from API
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  
   const [locations, setLocations] = useState([]);
   const [resources, setResources] = useState([]);
   const [services, setServices] = useState([]);
   const [availableServices, setAvailableServices] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [hongKongLocation, setHongKongLocation] = useState(null);
+  const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
   
-  // UI state
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
+  const [activeTimePicker, setActiveTimePicker] = useState(null);
   
-  // Create new dialogs state
   const [showCreateLocation, setShowCreateLocation] = useState(false);
   const [showCreateResource, setShowCreateResource] = useState(false);
   const [showCreateService, setShowCreateService] = useState(false);
-  const [showScheduleInfo, setShowScheduleInfo] = useState(false);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   
-  // Create new forms data
   const [newLocation, setNewLocation] = useState({ name: '', time_zone: 'Asia/Kolkata' });
   const [newResource, setNewResource] = useState({ name: '', max_simultaneous_bookings: 1 });
-  const [newService, setNewService] = useState({ name: '', price: '', duration: 'PT1H' });
+  const [newService, setNewService] = useState({ 
+    name: '', 
+    price: 0, 
+    duration: 'PT1H', 
+    bookable_interval: 'PT15M' 
+  });
+  const [newCustomer, setNewCustomer] = useState({ name: '', email: '', phone: '' });
   
-  // Create loading states
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [isCreatingResource, setIsCreatingResource] = useState(false);
   const [isCreatingService, setIsCreatingService] = useState(false);
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  
+  // Image handling functions
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => setImagePreview(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  const handleImageUpload = async () => {
+    if (!imageFile) return null;
+    
+    try {
+      setUploadingImage(true);
+      const result = await imageAPI.uploadImage(imageFile);
+      return result.url || result.imageUrl || result.image_url; // Handle different response formats
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      setError('Failed to upload image. Please try again.');
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
-  // Load initial data
+  // Customer management functions
+  const loadCustomers = async () => {
+    try {
+      console.log('👥 Loading customers...');
+      const response = await customerAPI.getCustomers();
+      setCustomers(response.data || []);
+      console.log(`✅ Loaded ${response.data?.length || 0} customers`);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      // Fallback to empty array
+      setCustomers([]);
+    }
+  };
+
+  const handleCreateCustomer = async (e) => {
+    e.preventDefault();
+    
+    if (!newCustomer.name.trim()) {
+      setError('Customer name is required');
+      return;
+    }
+
+    try {
+      setIsCreatingCustomer(true);
+      
+      const customerData = {
+        name: newCustomer.name.trim(),
+        email: newCustomer.email.trim(),
+        phone: newCustomer.phone.trim()
+      };
+
+      // Create customer via API
+      const customer = await customerAPI.createCustomer(customerData);
+
+      // Add to customers list
+      setCustomers(prev => [...prev, customer]);
+      
+      // Select the new customer
+      setFormData(prev => ({
+        ...prev,
+        customer_id: customer.id,
+        customer_name: customer.name
+      }));
+
+      // Reset form and close modal
+      setNewCustomer({ name: '', email: '', phone: '' });
+      setShowCreateCustomer(false);
+      
+      console.log('✅ Customer created successfully:', customer);
+      
+    } catch (error) {
+      setError('Failed to create customer. Please try again.');
+      console.error('Error creating customer:', error);
+    } finally {
+      setIsCreatingCustomer(false);
+    }
+  };
+
   useEffect(() => {
     const loadFormData = async () => {
       try {
         setLoadingData(true);
-        setError(''); // Clear any previous errors
+        setError('');
         
         console.log('📋 Loading form data for Add Booking...');
         
@@ -59,16 +404,18 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
           bookingAPI.getServices()
         ]);
         
+        // Load customers
+        await loadCustomers();
+        
         const locations = locationsRes.data || [];
         const resources = resourcesRes.data || [];
         const services = servicesRes.data || [];
         
-        // Find Hong Kong location
-        const hkLocation = locations.find(loc => 
-          loc.name.toLowerCase().includes('hong kong') || 
-          loc.time_zone === 'Asia/Hong_Kong' ||
-          loc.name.toLowerCase().includes('hk')
-        ) || locations[0]; // fallback to first location
+        // Use specific Hong Kong location ID from API testing
+        const HONG_KONG_LOCATION_ID = '7aa01d57-aacf-480e-9065-d48d46ffb365';
+        const hkLocation = locations.find(loc => loc.id === HONG_KONG_LOCATION_ID) ||
+                          locations.find(loc => loc.name.toLowerCase().includes('hong kong')) ||
+                          locations[0];
         
         if (hkLocation) {
           setHongKongLocation(hkLocation);
@@ -93,39 +440,96 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     loadFormData();
   }, []);
 
-  // Handle form field changes
+  useEffect(() => {
+    const loadAvailableTimeSlots = async () => {
+      if (!formData.resource_id || !formData.date) {
+        setAvailableTimeSlots([]);
+        return;
+      }
+
+      try {
+        console.log('📅 Loading available time slots...');
+        const bookingsRes = await bookingAPI.getAllBookings();
+        const bookings = bookingsRes.data || [];
+        const selectedDate = formData.date;
+
+        const dateBookings = bookings.filter(booking => {
+          const bookingDate = booking.starts_at.split('T')[0];
+          return booking.resource_id === formData.resource_id && bookingDate === selectedDate;
+        });
+
+        const allSlots = [];
+        for (let hour = 6; hour < 24; hour++) {
+          for (let minute = 0; minute < 60; minute += 15) {
+            allSlots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+          }
+        }
+
+        const bookedSlots = new Set();
+        dateBookings.forEach(booking => {
+          const startTime = booking.starts_at.split('T')[1].substring(0, 5);
+          const endTime = booking.ends_at.split('T')[1].substring(0, 5);
+          
+          let current = startTime;
+          while (current <= endTime) {
+            bookedSlots.add(current);
+            const [h, m] = current.split(':').map(Number);
+            const nextMinute = m + 15;
+            if (nextMinute < 60) {
+              current = `${h.toString().padStart(2, '0')}:${nextMinute.toString().padStart(2, '0')}`;
+            } else {
+              current = `${(h + 1).toString().padStart(2, '0')}:00`;
+            }
+          }
+        });
+
+        const availableSlots = allSlots.filter(slot => !bookedSlots.has(slot));
+        setAvailableTimeSlots(availableSlots);
+        console.log(`✅ Available slots loaded: ${availableSlots.length} slots available`);
+
+      } catch (err) {
+        console.error('❌ Error loading available time slots:', err);
+        setAvailableTimeSlots([]);
+      }
+    };
+
+    loadAvailableTimeSlots();
+  }, [formData.resource_id, formData.date]);
+
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    setError(''); // Clear error when user types
+    setError('');
   };
 
-  // Format datetime for API (ISO 8601 with timezone)
+  const convertTo12Hour = (time24) => {
+    const [h, m] = time24.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+  };
+
   const formatDateTime = (date, time) => {
     if (!date || !time) return '';
     
-    // Get timezone from selected location
     const selectedLocation = locations.find(loc => loc.id === formData.location_id);
-    let timezone = '+05:30'; // Default fallback
+    let timezone = '+05:30';
     
     if (selectedLocation?.time_zone) {
-      // Convert IANA timezone to offset
       const timezoneMap = {
         'Asia/Hong_Kong': '+08:00',
         'Asia/Kolkata': '+05:30',
         'Asia/Singapore': '+08:00',
-        'America/New_York': '-05:00', // or -04:00 during DST
-        'Europe/London': '+00:00', // or +01:00 during DST
+        'America/New_York': '-05:00',
+        'Europe/London': '+00:00',
       };
       timezone = timezoneMap[selectedLocation.time_zone] || '+05:30';
     }
     
-    // Create proper ISO datetime string with timezone offset
     return `${date}T${time}:00${timezone}`;
   };
 
-  // Validate form
   const validateForm = () => {
-    if (!formData.user_name.trim()) return 'Please enter your name';
+    if (!formData.customer_id && !formData.customer_name.trim()) return 'Please select or create a customer';
     if (!formData.location_id) return 'Please select a location';
     if (!formData.resource_id) return 'Please select a resource';
     if (!formData.service_id) return 'Please select a service';
@@ -133,12 +537,10 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     if (!formData.start_time) return 'Please select start time';
     if (!formData.end_time) return 'Please select end time';
     
-    // Validate time logic
     if (formData.start_time >= formData.end_time) {
       return 'End time must be after start time';
     }
     
-    // Validate booking time is within reasonable hours (6 AM to 11 PM)
     const startHour = parseInt(formData.start_time.split(':')[0]);
     const endHour = parseInt(formData.end_time.split(':')[0]);
     
@@ -150,7 +552,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       return 'Bookings before 6:00 AM are not available';
     }
     
-    // Validate date is not in the past
     const selectedDate = new Date(formData.date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -162,7 +563,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     return null;
   };
 
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -176,9 +576,24 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       setLoading(true);
       setError('');
       
-      // Format datetimes for API
+      // Upload image first if provided
+      let imageUrl = null;
+      if (imageFile) {
+        console.log('📷 Uploading image...');
+        imageUrl = await handleImageUpload();
+        if (!imageUrl) {
+          // Image upload failed, but error is already set
+          return;
+        }
+        console.log('✅ Image uploaded:', imageUrl);
+      }
+      
       const starts_at = formatDateTime(formData.date, formData.start_time);
       const ends_at = formatDateTime(formData.date, formData.end_time);
+      
+      // Get customer info
+      const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+      const customerName = selectedCustomer?.name || formData.customer_name.trim();
       
       const bookingData = {
         location_id: formData.location_id,
@@ -187,40 +602,38 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         starts_at,
         ends_at,
         metadata: {
-          user_name: formData.user_name.trim()
+          user_name: customerName,
+          customer_id: formData.customer_id,
+          customer_email: selectedCustomer?.email,
+          customer_phone: selectedCustomer?.phone,
+          ...(imageUrl && { image_url: imageUrl })
         }
       };
       
       console.log('Creating booking with data:', bookingData);
       
-      // Check if user might be attempting to create a duplicate booking
       console.log('🔍 Checking for potential conflicts...');
       console.log(`📅 Booking details: ${formData.date} ${formData.start_time}-${formData.end_time}`);
       console.log(`🏭 Resource: ${resources.find(r => r.id === formData.resource_id)?.name}`);
       
-      // Ensure service and resource are associated before creating booking
       try {
         await bookingAPI.associateServiceToResource(formData.service_id, formData.resource_id);
       } catch (associationError) {
-        // Association might already exist or fail for other reasons
         console.warn('Association warning:', associationError);
       }
       
-      // Step 1: Check existing schedules first
       console.log('🗺️ Checking existing schedules for resource...');
-      console.log('🔍 Resource ID:', formData.resource_id);
-      console.log('🔍 Location ID:', formData.location_id);
-      console.log('🔍 Booking Date:', formData.date);
-      console.log('🔍 Time:', formData.start_time, 'to', formData.end_time);
       
       let hasSchedule = false;
+      let existingSchedules = [];
+      
       try {
-        const existingSchedules = await bookingAPI.getScheduleBlocks(formData.resource_id);
-        const schedules = existingSchedules.data || [];
-        const bookingDate = new Date(formData.date);
+        const schedulesResponse = await bookingAPI.getScheduleBlocks(formData.resource_id);
+        existingSchedules = schedulesResponse.data || [];
+        console.log(`📋 Found ${existingSchedules.length} existing schedule blocks`);
         
-        // Check if there's a schedule for the booking date
-        const dateSchedule = schedules.find(schedule => {
+        const bookingDate = new Date(formData.date);
+        const dateSchedule = existingSchedules.find(schedule => {
           const scheduleDate = new Date(schedule.starts_at);
           return scheduleDate.toDateString() === bookingDate.toDateString();
         });
@@ -233,16 +646,71 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         }
       } catch (scheduleCheckError) {
         console.log('ℹ️ Could not check existing schedules:', scheduleCheckError.message);
+        // Assume no schedules exist
+        hasSchedule = false;
       }
       
-      // Step 2: Create schedule block if needed
+      // AGGRESSIVE SCHEDULE CREATION - Always create if no schedules exist
+      if (existingSchedules.length === 0) {
+        console.log('🚨 ZERO schedule blocks found - creating comprehensive schedule immediately!');
+        
+        const selectedLocation = locations.find(loc => loc.id === formData.location_id);
+        const timezoneMap = {
+          'Asia/Hong_Kong': '+08:00',
+          'Asia/Kolkata': '+05:30', 
+          'Asia/Singapore': '+08:00',
+          'America/New_York': '-05:00'
+        };
+        const timezone = timezoneMap[selectedLocation?.time_zone] || '+08:00';
+        
+        // Create schedules for the next 30 days
+        const today = new Date();
+        const schedulesToCreate = [];
+        
+        for (let i = 0; i < 30; i++) {
+          const scheduleDate = new Date(today);
+          scheduleDate.setDate(today.getDate() + i);
+          const dateStr = scheduleDate.toISOString().split('T')[0];
+          
+          schedulesToCreate.push({
+            location_id: formData.location_id,
+            starts_at: `${dateStr}T06:00:00${timezone}`,
+            ends_at: `${dateStr}T23:00:00${timezone}`
+          });
+        }
+        
+        console.log(`🔄 Creating ${schedulesToCreate.length} schedule blocks...`);
+        
+        // Create schedules one by one
+        let successCount = 0;
+        for (const scheduleData of schedulesToCreate) {
+          try {
+            await bookingAPI.createScheduleBlock(formData.resource_id, scheduleData);
+            successCount++;
+            console.log(`✅ Created schedule ${successCount}/${schedulesToCreate.length}`);
+          } catch (createError) {
+            if (createError.message.includes('collides')) {
+              successCount++;
+              console.log(`✅ Schedule ${successCount}/${schedulesToCreate.length} already exists`);
+            } else {
+              console.warn(`⚠️ Failed to create schedule for ${scheduleData.starts_at}:`, createError.message);
+            }
+          }
+        }
+        
+        console.log(`🎉 Schedule creation complete: ${successCount}/${schedulesToCreate.length} successful`);
+        hasSchedule = successCount > 0;
+        
+        // Wait for processing
+        console.log('⏳ Waiting for schedule processing...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
       if (!hasSchedule) {
         console.log('🗺️ Creating schedule block for booking date...');
         
-        const timezone = '+08:00'; // Hong Kong timezone
+        const timezone = '+08:00';
         const bookingDate = formData.date;
-        
-        // Create schedule block that covers business hours (6 AM to 11 PM)
         const scheduleStart = `${bookingDate}T06:00:00${timezone}`;
         const scheduleEnd = `${bookingDate}T23:00:00${timezone}`;
         
@@ -265,13 +733,10 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
             hasSchedule = true;
           } else {
             console.error('❌ Schedule block creation failed:', scheduleError.message);
-            console.error('❌ Full error object:', scheduleError);
-            // Continue anyway, might work with recurring schedule
           }
         }
       }
       
-      // Step 3: Create recurring schedule if we still don't have a schedule
       if (!hasSchedule) {
         console.log('🔄 Creating recurring schedule as fallback...');
         
@@ -284,8 +749,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
           is_active: true
         };
         
-        console.log('🔄 Recurring schedule data:', recurringScheduleData);
-        
         try {
           await bookingAPI.createRecurringSchedule(formData.resource_id, recurringScheduleData);
           console.log('✅ Recurring schedule created successfully');
@@ -295,66 +758,13 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
           if (recurringError.message.includes('collides') || recurringError.message.includes('already exists')) {
             console.log('✅ Recurring schedule collision/exists - that\'s good!');
             hasSchedule = true;
-          } else {
-            console.error('❌ Recurring schedule creation failed:', recurringError.message);
-            console.error('❌ Full recurring error object:', recurringError);
           }
         }
       }
       
-      // Step 4: If still no schedule, try some alternative approaches
-      if (!hasSchedule) {
-        console.log('⚠️ No schedule found yet, trying alternative approaches...');
-        
-        // Try 1: Create a minimal schedule block
-        try {
-          console.log('🔄 Trying minimal schedule block...');
-          const minimalScheduleData = {
-            location_id: formData.location_id,
-            starts_at: `${formData.date}T${formData.start_time}:00+08:00`,
-            ends_at: `${formData.date}T${formData.end_time}:00+08:00`
-          };
-          
-          await bookingAPI.createScheduleBlock(formData.resource_id, minimalScheduleData);
-          console.log('✅ Minimal schedule block created!');
-          hasSchedule = true;
-        } catch (minimalError) {
-          console.log('⚠️ Minimal schedule failed:', minimalError.message);
-          
-          // Try 2: Skip schedule creation and attempt booking directly
-          console.log('🚀 Attempting direct booking without schedule creation...');
-          try {
-            const directResponse = await bookingAPI.createBooking(bookingData);
-            console.log('✅ Direct booking succeeded!', directResponse);
-            
-            // If direct booking worked, complete the process
-            localStorage.removeItem('bookings_cache_valid');
-            localStorage.removeItem('bookings_cache');
-            
-            if (onBookingCreated) {
-              onBookingCreated(directResponse);
-            }
-            
-            onClose();
-            return;
-            
-          } catch (directError) {
-            console.error('❌ Direct booking also failed:', directError.message);
-            console.error('❌ Full error details:', directError);
-            
-            // Show detailed error information
-            throw new Error(`Unable to create booking or schedule. Error details: ${directError.message}. Please check the browser console for more details or try a different resource.`);
-          }
-        }
-      }
-      
-      console.log('✅ Schedule confirmed available for booking');
-      
-      // Step 5: Wait a moment for schedules to be processed
       console.log('⏳ Waiting for schedule processing...');
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Step 6: Now try to create the booking
       console.log('🚀 Creating booking now...');
       
       let response;
@@ -364,27 +774,132 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       } catch (bookingError) {
         console.error('❌ Booking failed:', bookingError.message);
         
-        // Check if this is a schedule collision error from earlier steps
-        if (bookingError.message.includes('collides with one or more existing schedule blocks')) {
-          // This error is actually from the schedule creation, but it means schedules exist!
-          console.log('✅ Schedule collision detected - this means schedules exist!');
-          console.log('🔄 Retrying booking since schedules are available...');
+        // Handle "resource does not have an open schedule" error
+        if (bookingError.message.includes('does not have an open schedule')) {
+        console.log('🔧 Resource has no schedule, creating comprehensive schedule...');
           
-          // Try booking directly since schedules exist
+          try {
+            // Get the selected location for proper timezone
+            const selectedLocation = locations.find(loc => loc.id === formData.location_id);
+            console.log('🗺 Location details:', selectedLocation);
+            
+            // Determine timezone based on location
+            const timezoneMap = {
+              'Asia/Hong_Kong': '+08:00',
+              'Asia/Kolkata': '+05:30', 
+              'Asia/Singapore': '+08:00',
+              'America/New_York': '-05:00'
+            };
+            const timezone = timezoneMap[selectedLocation?.time_zone] || '+08:00';
+            console.log(`⏰ Using timezone: ${timezone} for location: ${selectedLocation?.name}`);
+            
+            const bookingDate = new Date(formData.date);
+            
+            // First, try creating a schedule for just the booking date
+            const dateStr = bookingDate.toISOString().split('T')[0];
+            const primarySchedule = {
+              location_id: formData.location_id,
+              starts_at: `${dateStr}T06:00:00${timezone}`,
+              ends_at: `${dateStr}T23:00:00${timezone}`
+            };
+            
+            console.log('🗺 Creating primary schedule:', primarySchedule);
+            
+            try {
+              await bookingAPI.createScheduleBlock(formData.resource_id, primarySchedule);
+              console.log(`✅ Created primary schedule for ${dateStr}`);
+            } catch (primaryScheduleErr) {
+              if (!primaryScheduleErr.message.includes('collides')) {
+                console.warn('Primary schedule creation warning:', primaryScheduleErr.message);
+              } else {
+                console.log('✅ Primary schedule already exists (collision)');
+              }
+            }
+            
+            // Then create additional days for better UX
+            const additionalDays = [];
+            for (let i = 1; i <= 7; i++) {
+              const futureDate = new Date(bookingDate);
+              futureDate.setDate(bookingDate.getDate() + i);
+              const futureDateStr = futureDate.toISOString().split('T')[0];
+              
+              additionalDays.push({
+                location_id: formData.location_id,
+                starts_at: `${futureDateStr}T06:00:00${timezone}`,
+                ends_at: `${futureDateStr}T23:00:00${timezone}`
+              });
+            }
+            
+            // Create additional schedules (don't wait for these)
+            additionalDays.forEach(async (scheduleData) => {
+              try {
+                await bookingAPI.createScheduleBlock(formData.resource_id, scheduleData);
+                console.log(`✅ Created additional schedule for ${scheduleData.starts_at.split('T')[0]}`);
+              } catch (additionalErr) {
+                // Ignore errors for additional days
+                console.log(`⚠️ Additional schedule existed: ${scheduleData.starts_at.split('T')[0]}`);
+              }
+            });
+            
+            // Wait briefly for schedule processing
+            console.log('⏳ Waiting for schedule processing...');
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // Try booking again
+            console.log('🚀 Retrying booking after creating schedules...');
+            console.log('📋 Booking data for retry:', bookingData);
+            console.log(`🗺 Resource: ${resources.find(r => r.id === formData.resource_id)?.name}`);
+            console.log(`📅 Date/Time: ${formData.date} ${formData.start_time}-${formData.end_time}`);
+            
+            response = await bookingAPI.createBooking(bookingData);
+            console.log('✅ Booking created successfully after schedule creation!');
+            
+          } catch (scheduleFixError) {
+            console.error('❌ Failed to create schedules and booking:', scheduleFixError);
+            
+            // Last resort: try with a different approach
+            if (scheduleFixError.message && scheduleFixError.message.includes('does not have an open schedule')) {
+              console.log('🆘 Last resort: Trying with current time as schedule...');
+              
+              try {
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
+                
+                // Create a wide schedule for today
+                await bookingAPI.createScheduleBlock(formData.resource_id, {
+                  location_id: formData.location_id,
+                  starts_at: `${todayStr}T00:00:00${timezone}`,
+                  ends_at: `${todayStr}T23:59:59${timezone}`
+                });
+                
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                response = await bookingAPI.createBooking(bookingData);
+                console.log('✅ Booking created with last resort schedule!');
+                
+              } catch (lastResortError) {
+                console.error('❌ Last resort failed:', lastResortError);
+                
+                const resourceName = resources.find(r => r.id === formData.resource_id)?.name || 'the selected resource';
+                throw new Error(`🚨 Unable to create booking for ${resourceName}. \n\nThe resource doesn't have an available schedule for the selected date and time. \n\nPlease try:\n• Selecting a different resource\n• Choosing a different date/time\n• Contacting an administrator to set up the resource schedule\n\nError details: ${scheduleFixError.message}`);
+              }
+            } else {
+              throw new Error(`Booking failed: ${scheduleFixError.message}`);
+            }
+          }
+        } else if (bookingError.message.includes('collides with one or more existing schedule blocks')) {
+          console.log('✅ Schedule collision detected - this means schedules exist!');
+          
           try {
             response = await bookingAPI.createBooking(bookingData);
             console.log('✅ Booking created after collision resolution!');
-        } catch (retryError) {
-            console.error('❌ Retry booking failed:', retryError.message);
+          } catch (retryError) {
             if (retryError.message.includes('does not match a valid bookable slot')) {
-              throw new Error(`This time slot is not available. It may already be booked or the resource is not available at this time. Please select a different time.`);
+              throw new Error('This time slot is not available. It may already be booked or the resource is not available at this time. Please select a different time.');
             } else {
               throw new Error(`Booking failed: ${retryError.message}`);
             }
           }
         } else if (bookingError.message.includes('does not match a valid bookable slot')) {
-          console.log('🔄 Trying with exact time slot...');
-          
           const exactScheduleData = {
             location_id: formData.location_id,
             starts_at: starts_at,
@@ -397,23 +912,17 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
           } catch (exactScheduleError) {
             if (exactScheduleError.message.includes('collides')) {
               console.log('✅ Exact schedule collision - slot exists, this is good!');
-            } else {
-              console.warn('⚠️ Exact schedule creation failed:', exactScheduleError.message);
             }
           }
           
-          // Try booking one more time regardless of schedule creation result
           try {
             response = await bookingAPI.createBooking(bookingData);
             console.log('✅ Booking created on second attempt!');
           } catch (finalBookingError) {
-            console.error('❌ Final booking attempt failed:', finalBookingError.message);
-            
-            // Provide specific error messages based on the failure
             if (finalBookingError.message.includes('does not match a valid bookable slot')) {
-              throw new Error(`This time slot is not available. It may already be booked or outside the resource's available hours. Please select a different time.`);
+              throw new Error('This time slot is not available. It may already be booked or outside the resource\'s available hours. Please select a different time.');
             } else if (finalBookingError.message.includes('already exists') || finalBookingError.message.includes('conflict')) {
-              throw new Error(`There is already a booking for this resource at this time. Please choose a different time or resource.`);
+              throw new Error('There is already a booking for this resource at this time. Please choose a different time or resource.');
             } else {
               throw new Error(`Unable to create booking: ${finalBookingError.message}`);
             }
@@ -423,35 +932,45 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         }
       }
       
-      // Clear all cache to ensure fresh data load
       localStorage.removeItem('bookings_cache_valid');
       localStorage.removeItem('bookings_cache');
       
-      // Notify parent component with the new booking
       if (onBookingCreated) {
         onBookingCreated(response);
       }
       
-      // Show success message
       console.log('✅ Booking created successfully:', response);
-      
-      // Close form
       onClose();
       
     } catch (err) {
       console.error('Error creating booking:', err);
       
-      // Check if this is a collision error that should be ignored
       if (err.message && err.message.includes('collides with one or more existing schedule blocks')) {
         console.log('✅ Collision error detected - schedules exist, trying direct booking...');
         
-        // Try booking directly since schedules clearly exist
         try {
           setError('Schedules exist, attempting booking...');
+          const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+          const customerName = selectedCustomer?.name || formData.customer_name.trim();
+          
+          const bookingData = {
+            location_id: formData.location_id,
+            resource_id: formData.resource_id,
+            service_id: formData.service_id,
+            starts_at: formatDateTime(formData.date, formData.start_time),
+            ends_at: formatDateTime(formData.date, formData.end_time),
+            metadata: { 
+              user_name: customerName,
+              customer_id: formData.customer_id,
+              customer_email: selectedCustomer?.email,
+              customer_phone: selectedCustomer?.phone,
+              ...(imageUrl && { image_url: imageUrl })
+            }
+          };
+          
           const response = await bookingAPI.createBooking(bookingData);
           console.log('✅ Direct booking successful after collision!');
           
-          // Clear cache and complete booking
           localStorage.removeItem('bookings_cache_valid');
           localStorage.removeItem('bookings_cache');
           
@@ -460,12 +979,11 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
           }
           
           onClose();
-          return; // Successfully completed
+          return;
           
         } catch (directBookingError) {
           console.error('❌ Direct booking after collision failed:', directBookingError);
           
-          // Provide user-friendly error messages
           if (directBookingError.message.includes('does not match a valid bookable slot')) {
             setError('This time slot is not available. It may already be booked by someone else. Please select a different time or check existing bookings.');
           } else if (directBookingError.message.includes('already exists') || directBookingError.message.includes('conflict')) {
@@ -482,35 +1000,14 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     }
   };
 
-  // Generate time options (15-minute intervals)
-  const generateTimeOptions = () => {
-    const times = [];
-    for (let hour = 0; hour < 24; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        const displayTime = new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        });
-        times.push({ value: time, label: displayTime });
-      }
+  const handleResourceChange = (resourceId) => {
+    handleChange('resource_id', resourceId);
+    loadAvailableServices(resourceId);
+    if (formData.service_id) {
+      handleChange('service_id', '');
     }
-    return times;
   };
 
-  const timeOptions = generateTimeOptions();
-
-  // Helper function to check if two time ranges overlap
-  const timeRangesOverlap = (start1, end1, start2, end2) => {
-    const s1 = new Date(start1);
-    const e1 = new Date(end1);
-    const s2 = new Date(start2);
-    const e2 = new Date(end2);
-    return s1 < e2 && s2 < e1;
-  };
-
-  // Load available services for selected resource
   const loadAvailableServices = async (resourceId) => {
     if (!resourceId) {
       setAvailableServices(services);
@@ -518,8 +1015,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     }
 
     try {
-      // For now, show all services and auto-associate when booking is created
-      // In the future, we can filter based on actual associations
       setAvailableServices(services);
     } catch (error) {
       console.error('Error loading available services:', error);
@@ -527,22 +1022,10 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     }
   };
 
-  // Handle resource change
-  const handleResourceChange = (resourceId) => {
-    handleChange('resource_id', resourceId);
-    loadAvailableServices(resourceId);
-    // Clear service selection when resource changes
-    if (formData.service_id) {
-      handleChange('service_id', '');
-    }
-  };
-
-  // Update available services when services list changes
   useEffect(() => {
     loadAvailableServices(formData.resource_id);
   }, [services, formData.resource_id]);
 
-  // Handle creating new location
   const handleCreateLocation = async () => {
     if (!newLocation.name.trim()) {
       setError('Location name is required');
@@ -553,11 +1036,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       setIsCreatingLocation(true);
       const response = await bookingAPI.createLocation(newLocation);
       
-      // Add to locations list and select it
       setLocations(prev => [...prev, response]);
       setFormData(prev => ({ ...prev, location_id: response.id }));
       
-      // Reset and close
       setNewLocation({ name: '', time_zone: 'Asia/Kolkata' });
       setShowCreateLocation(false);
       setError('');
@@ -569,7 +1050,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     }
   };
 
-  // Handle creating new resource
   const handleCreateResource = async () => {
     if (!newResource.name.trim()) {
       setError('Resource name is required');
@@ -580,55 +1060,48 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       setIsCreatingResource(true);
       const response = await bookingAPI.createResource(newResource);
       
-        // Create default schedule blocks for the new resource (next 7 days, 9 AM to 5 PM)
-        try {
-          const selectedLocation = locations.find(loc => loc.id === formData.location_id);
-          const timezoneMap = {
-            'Asia/Hong_Kong': '+08:00',
-            'Asia/Kolkata': '+05:30',
-            'Asia/Singapore': '+08:00',
-          };
-          const timezone = timezoneMap[selectedLocation?.time_zone] || '+05:30';
+      try {
+        const selectedLocation = locations.find(loc => loc.id === formData.location_id);
+        const timezoneMap = {
+          'Asia/Hong_Kong': '+08:00',
+          'Asia/Kolkata': '+05:30',
+          'Asia/Singapore': '+08:00',
+        };
+        const timezone = timezoneMap[selectedLocation?.time_zone] || '+05:30';
+        
+        const schedulePromises = [];
+        for (let i = 0; i < 7; i++) {
+          const date = new Date();
+          date.setDate(date.getDate() + i);
+          const dateStr = date.toISOString().split('T')[0];
           
-          // Create schedule blocks for the next 7 days
-          const schedulePromises = [];
-          for (let i = 0; i < 7; i++) {
-            const date = new Date();
-            date.setDate(date.getDate() + i);
-            const dateStr = date.toISOString().split('T')[0];
-            
-            // Create schedule block with error handling for each day
-            const createBlock = async () => {
-              try {
-                await bookingAPI.createScheduleBlock(response.id, {
-                  location_id: formData.location_id,
-                  starts_at: `${dateStr}T09:00:00${timezone}`,
-                  ends_at: `${dateStr}T17:00:00${timezone}`
-                });
-              } catch (blockError) {
-                if (!blockError.message.includes('collides')) {
-                  console.warn(`Failed to create schedule block for ${dateStr}:`, blockError);
-                }
+          const createBlock = async () => {
+            try {
+              await bookingAPI.createScheduleBlock(response.id, {
+                location_id: formData.location_id,
+                starts_at: `${dateStr}T09:00:00${timezone}`,
+                ends_at: `${dateStr}T17:00:00${timezone}`
+              });
+            } catch (blockError) {
+              if (!blockError.message.includes('collides')) {
+                console.warn(`Failed to create schedule block for ${dateStr}:`, blockError);
               }
-            };
-            
-            schedulePromises.push(createBlock());
-          }
+            }
+          };
           
-          // Wait for all schedule blocks to be created (or fail gracefully)
-          await Promise.all(schedulePromises);
-        } catch (scheduleError) {
-          console.warn('Failed to create default schedule for resource:', scheduleError);
+          schedulePromises.push(createBlock());
         }
+        
+        await Promise.all(schedulePromises);
+      } catch (scheduleError) {
+        console.warn('Failed to create default schedule for resource:', scheduleError);
+      }
       
-      // Add to resources list and select it
       setResources(prev => [...prev, response]);
       setFormData(prev => ({ ...prev, resource_id: response.id }));
       
-      // Load available services for the new resource
       loadAvailableServices(response.id);
       
-      // Reset and close
       setNewResource({ name: '', max_simultaneous_bookings: 1 });
       setShowCreateResource(false);
       setError('');
@@ -640,7 +1113,6 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     }
   };
 
-  // Handle creating new service
   const handleCreateService = async () => {
     if (!newService.name.trim() || !newService.price || !newService.duration) {
       setError('Service name, price, and duration are required');
@@ -651,27 +1123,23 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       setIsCreatingService(true);
       const serviceData = {
         ...newService,
-        price: parseFloat(newService.price).toFixed(3)
+        price: parseFloat(newService.price) || 0
       };
       
       const response = await bookingAPI.createService(serviceData);
       
-      // If a resource is selected, associate the new service with it
       if (formData.resource_id) {
         try {
           await bookingAPI.associateServiceToResource(response.id, formData.resource_id);
         } catch (associationError) {
           console.warn('Failed to associate service with resource:', associationError);
-          // Continue anyway - user can manually associate later
         }
       }
       
-      // Add to services list and select it
       setServices(prev => [...prev, response]);
       setFormData(prev => ({ ...prev, service_id: response.id }));
       
-      // Reset and close
-      setNewService({ name: '', price: '', duration: 'PT1H' });
+      setNewService({ name: '', price: 0, duration: 'PT1H', bookable_interval: 'PT15M' });
       setShowCreateService(false);
       setError('');
       
@@ -681,6 +1149,17 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       setIsCreatingService(false);
     }
   };
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (activeTimePicker && !e.target.closest('[data-time-picker]')) {
+        setActiveTimePicker(null);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [activeTimePicker]);
 
   if (loadingData) {
     return (
@@ -696,15 +1175,13 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style={{ fontFamily: 'Inter' }}>
       <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <Calendar className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-semibold text-gray-900" style={{ fontFamily: 'Inter' }}>
-              Add New Booking
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-900">Add New Booking</h2>
           </div>
           <button
             onClick={onClose}
@@ -716,31 +1193,93 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <div className="p-6 space-y-6">
           {/* Error Message */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex">
-                <div className="text-sm text-red-600">{error}</div>
-              </div>
+              <div className="text-sm text-red-600">{error}</div>
             </div>
           )}
 
-          {/* User Name */}
+          {/* Customer Selection */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
               <User className="w-4 h-4" />
-              Your Name
+              Customer
             </label>
-            <input
-              type="text"
-              value={formData.user_name}
-              onChange={(e) => handleChange('user_name', e.target.value)}
-              placeholder="Enter your full name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              style={{ fontFamily: 'Inter' }}
+            <select
+              value={formData.customer_id}
+              onChange={(e) => {
+                if (e.target.value === 'CREATE_NEW') {
+                  setShowCreateCustomer(true);
+                } else {
+                  const selectedCustomer = customers.find(c => c.id === e.target.value);
+                  handleChange('customer_id', e.target.value);
+                  handleChange('customer_name', selectedCustomer?.name || '');
+                }
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               required
-            />
+            >
+              <option value="">Select a customer</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name} {customer.email && `(${customer.email})`}
+                </option>
+              ))}
+              <option value="CREATE_NEW" className="font-medium text-blue-600">
+                + Add New Customer
+              </option>
+            </select>
+          </div>
+
+          {/* Image Upload */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <Upload className="w-4 h-4" />
+              Upload Image (Optional)
+            </label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-gray-400 transition-colors">
+              {imagePreview ? (
+                <div className="relative">
+                  <img 
+                    src={imagePreview} 
+                    alt="Preview" 
+                    className="w-full h-32 object-cover rounded-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageFile(null);
+                      setImagePreview(null);
+                    }}
+                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="cursor-pointer block">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                  <div className="text-center py-4">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600">Click to upload an image</p>
+                    <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 5MB</p>
+                  </div>
+                </label>
+              )}
+            </div>
+            {uploadingImage && (
+              <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                Uploading image...
+              </div>
+            )}
           </div>
 
           {/* Location - Static Hong Kong */}
@@ -749,7 +1288,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
               <MapPin className="w-4 h-4" />
               Location
             </label>
-            <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600" style={{ fontFamily: 'Inter' }}>
+            <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600">
               {hongKongLocation ? hongKongLocation.name : 'Hong Kong'}
             </div>
           </div>
@@ -769,8 +1308,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   handleResourceChange(e.target.value);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              style={{ fontFamily: 'Inter' }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               required
             >
               <option value="">Select a resource</option>
@@ -810,8 +1348,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   handleChange('service_id', e.target.value);
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              style={{ fontFamily: 'Inter' }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               required
             >
               <option value="">Select a service</option>
@@ -842,54 +1379,71 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
               value={formData.date}
               onChange={(e) => handleChange('date', e.target.value)}
               min={new Date().toISOString().split('T')[0]}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              style={{ fontFamily: 'Inter' }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               required
             />
           </div>
 
           {/* Time Selection */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                <Clock className="w-4 h-4" />
-                Start Time
-              </label>
-              <select
-                value={formData.start_time}
-                onChange={(e) => handleChange('start_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                style={{ fontFamily: 'Inter' }}
-                required
-              >
-                <option value="">Select start time</option>
-                {timeOptions.map((time) => (
-                  <option key={time.value} value={time.value}>
-                    {time.label}
-                  </option>
-                ))}
-              </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Start Time */}
+            <div data-time-picker className="relative">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Start time</label>
+              <div className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setActiveTimePicker(activeTimePicker === 'start' ? null : 'start')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-500 hover:bg-gray-50 transition-colors text-left font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between"
+                >
+                  <span>{convertTo12Hour(formData.start_time)}</span>
+                  <Clock className="w-5 h-5 text-gray-400" />
+                </button>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">
+                  Show time picker
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-700"></div>
+                </div>
+              </div>
+              {activeTimePicker === 'start' && (
+                <TimePickerInline
+                  value={formData.start_time}
+                  onChange={(time) => {
+                    handleChange('start_time', time);
+                    setActiveTimePicker(null);
+                  }}
+                  onClose={() => setActiveTimePicker(null)}
+                  availableTimeSlots={availableTimeSlots}
+                />
+              )}
             </div>
 
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                <Clock className="w-4 h-4" />
-                End Time
-              </label>
-              <select
-                value={formData.end_time}
-                onChange={(e) => handleChange('end_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                style={{ fontFamily: 'Inter' }}
-                required
-              >
-                <option value="">Select end time</option>
-                {timeOptions.map((time) => (
-                  <option key={time.value} value={time.value}>
-                    {time.label}
-                  </option>
-                ))}
-              </select>
+            {/* End Time */}
+            <div data-time-picker className="relative">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">End time</label>
+              <div className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setActiveTimePicker(activeTimePicker === 'end' ? null : 'end')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-500 hover:bg-gray-50 transition-colors text-left font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between"
+                >
+                  <span>{convertTo12Hour(formData.end_time)}</span>
+                  <Clock className="w-5 h-5 text-gray-400" />
+                </button>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">
+                  Show time picker
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-700"></div>
+                </div>
+              </div>
+              {activeTimePicker === 'end' && (
+                <TimePickerInline
+                  value={formData.end_time}
+                  onChange={(time) => {
+                    handleChange('end_time', time);
+                    setActiveTimePicker(null);
+                  }}
+                  onClose={() => setActiveTimePicker(null)}
+                  availableTimeSlots={availableTimeSlots}
+                />
+              )}
             </div>
           </div>
 
@@ -899,18 +1453,15 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
               type="button"
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              style={{ fontFamily: 'Inter' }}
             >
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={loading}
               className="px-4 py-2 text-sm font-medium text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ 
-                backgroundColor: '#184AC0', 
-                fontFamily: 'Inter'
-              }}
+              style={{ backgroundColor: '#184AC0' }}
             >
               {loading ? (
                 <div className="flex items-center gap-2">
@@ -922,7 +1473,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
               )}
             </button>
           </div>
-        </form>
+        </div>
       </div>
 
       {/* Create Location Dialog */}
@@ -932,9 +1483,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
             <h3 className="text-lg font-semibold mb-4">Create New Location</h3>
             <form onSubmit={(e) => { e.preventDefault(); handleCreateLocation(); }}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Name *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
                 <input
                   type="text"
                   value={newLocation.name}
@@ -944,9 +1493,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Time Zone
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Time Zone</label>
                 <input
                   type="text"
                   value={newLocation.time_zone}
@@ -983,9 +1530,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
             <h3 className="text-lg font-semibold mb-4">Create New Resource</h3>
             <form onSubmit={(e) => { e.preventDefault(); handleCreateResource(); }}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Name *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
                 <input
                   type="text"
                   value={newResource.name}
@@ -995,9 +1540,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Type
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
                 <input
                   type="text"
                   value={newResource.type || ''}
@@ -1007,9 +1550,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Max Simultaneous Bookings *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Max Simultaneous Bookings *</label>
                 <input
                   type="number"
                   min="1"
@@ -1020,9 +1561,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                 <textarea
                   value={newResource.description || ''}
                   onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
@@ -1059,9 +1598,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
             <h3 className="text-lg font-semibold mb-4">Create New Service</h3>
             <form onSubmit={(e) => { e.preventDefault(); handleCreateService(); }}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Name *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
                 <input
                   type="text"
                   value={newService.name}
@@ -1071,9 +1608,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Price *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Price *</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1085,9 +1620,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Duration *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Duration *</label>
                 <select
                   value={newService.duration}
                   onChange={(e) => setNewService({ ...newService, duration: e.target.value })}
@@ -1103,9 +1636,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                 </select>
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                 <textarea
                   value={newService.description || ''}
                   onChange={(e) => setNewService({ ...newService, description: e.target.value })}
@@ -1128,6 +1659,67 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isCreatingService ? 'Creating...' : 'Create Service'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Customer Dialog */}
+      {showCreateCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4">Add New Customer</h3>
+            <form onSubmit={handleCreateCustomer}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={newCustomer.name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  placeholder="Enter customer name"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter email address"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                <input
+                  type="tel"
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateCustomer(false);
+                    setNewCustomer({ name: '', email: '', phone: '' });
+                  }}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingCustomer || !newCustomer.name.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreatingCustomer ? 'Adding...' : 'Add Customer'}
                 </button>
               </div>
             </form>
