@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAPIO API Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 0;
+            text-align: center;
+            margin-bottom: 30px;
+            border-radius: 10px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .base-url {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .base-url code {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #1976d2;
+        }
+
+        .toc {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .toc h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .toc ul {
+            list-style: none;
+        }
+
+        .toc li {
+            margin: 8px 0;
+        }
+
+        .toc a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .toc a:hover {
+            color: #764ba2;
+        }
+
+        .section {
+            background: white;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 25px;
+            font-size: 1.8em;
+            font-weight: 600;
+        }
+
+        .section-content {
+            padding: 25px;
+        }
+
+        .endpoint {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+
+        .endpoint-header {
+            background: #f5f5f5;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .endpoint-header:hover {
+            background: #eeeeee;
+        }
+
+        .endpoint-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .method {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9em;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .method.get { background: #4caf50; color: white; }
+        .method.post { background: #2196f3; color: white; }
+        .method.patch { background: #ff9800; color: white; }
+        .method.delete { background: #f44336; color: white; }
+
+        .endpoint-path {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .endpoint-description {
+            color: #666;
+            margin-left: auto;
+            font-style: italic;
+        }
+
+        .endpoint-content {
+            padding: 20px;
+            display: none;
+        }
+
+        .endpoint-content.active {
+            display: block;
+        }
+
+        .param-section, .response-section {
+            margin-bottom: 20px;
+        }
+
+        .param-section h4, .response-section h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .param-list {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+
+        .param-item {
+            margin-bottom: 8px;
+        }
+
+        .param-name {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .param-type {
+            color: #666;
+            font-style: italic;
+        }
+
+        .required {
+            color: #f44336;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
+        .json-key {
+            color: #63b3ed;
+        }
+
+        .json-string {
+            color: #68d391;
+        }
+
+        .json-number {
+            color: #f6ad55;
+        }
+
+        .json-boolean {
+            color: #fc8181;
+        }
+
+        .toggle-icon {
+            margin-left: auto;
+            transition: transform 0.3s;
+        }
+
+        .toggle-icon.active {
+            transform: rotate(180deg);
+        }
+
+        .reference-section {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .reference-section h3 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+
+        .reference-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .reference-item {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #667eea;
+        }
+
+        .error-section {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .error-section h3 {
+            color: #721c24;
+            margin-bottom: 15px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 1em;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .endpoint-title {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .endpoint-description {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>HAPIO API Documentation</h1>
+            <p>Complete API reference for resource and schedule management</p>
+        </div>
+
+        <div class="base-url">
+            <strong>Base URL:</strong> <code>http://localhost:3000</code>
+        </div>
+
+        <input type="text" class="search-box" placeholder="Search endpoints..." id="searchBox">
+
+        <div class="toc">
+            <h2>Table of Contents</h2>
+            <ul>
+                <li><a href="#health-status">Health & Status Endpoints</a></li>
+                <li><a href="#resource-management">Resource Management</a></li>
+                <li><a href="#schedule-management">Schedule Management</a></li>
+                <li><a href="#error-responses">Error Responses</a></li>
+                <li><a href="#references">References</a></li>
+            </ul>
+        </div>
+
+        <!-- Health & Status Section -->
+        <div class="section" id="health-status">
+            <div class="section-header">Health & Status Endpoints</div>
+            <div class="section-content">
+                
+                <!-- Health Check -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/health</span>
+                            <span class="endpoint-description">Check server health and status</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">None</div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"status"</span>: <span class="json-string">"OK"</span>,
+  <span class="json-key">"timestamp"</span>: <span class="json-string">"2025-01-01T00:00:00.000Z"</span>,
+  <span class="json-key">"uptime"</span>: <span class="json-number">3600.123</span>,
+  <span class="json-key">"memory"</span>: {
+    <span class="json-key">"rss"</span>: <span class="json-number">50331648</span>,
+    <span class="json-key">"heapTotal"</span>: <span class="json-number">20971520</span>,
+    <span class="json-key">"heapUsed"</span>: <span class="json-number">15728640</span>,
+    <span class="json-key">"external"</span>: <span class="json-number">1048576</span>
+  },
+  <span class="json-key">"pid"</span>: <span class="json-number">12345</span>
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Root Endpoint -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/</span>
+                            <span class="endpoint-description">Basic API information</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">None</div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"message"</span>: <span class="json-string">"HAPIO API Server"</span>,
+  <span class="json-key">"version"</span>: <span class="json-string">"1.0.0"</span>,
+  <span class="json-key">"status"</span>: <span class="json-string">"running"</span>
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Resource Management Section -->
+        <div class="section" id="resource-management">
+            <div class="section-header">Resource Management</div>
+            <div class="section-content">
+
+                <!-- Create Resource -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method post">POST</span>
+                            <span class="endpoint-path">/createResource</span>
+                            <span class="endpoint-description">Create a new resource with scheduling, rates, and metadata</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Request Body</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(string)</span> 
+                                    <span class="required">required</span> - Name of the resource
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">defined_timings</span> 
+                                    <span class="param-type">(array)</span> 
+                                    <span class="required">required</span> - Schedule blocks for weekdays
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">max_duration</span> 
+                                    <span class="param-type">(number)</span> 
+                                    <span class="required">required</span> - Maximum booking duration in minutes
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">min_duration</span> 
+                                    <span class="param-type">(number)</span> 
+                                    <span class="required">required</span> - Minimum booking duration in minutes
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">duration_interval</span> 
+                                    <span class="param-type">(number)</span> 
+                                    <span class="required">required</span> - Booking interval in minutes
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">start_date</span> 
+                                    <span class="param-type">(string)</span> 
+                                    <span class="required">required</span> - Start date (YYYY-MM-DD)
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">capacity</span> 
+                                    <span class="param-type">(number)</span> 
+                                    <span class="required">required</span> - Resource capacity
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">category</span> 
+                                    <span class="param-type">(string)</span> 
+                                    <span class="required">required</span> - Resource category
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">rates</span> 
+                                    <span class="param-type">(array)</span> 
+                                    optional - Array of rate objects
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">photo_url</span> 
+                                    <span class="param-type">(string)</span> 
+                                    optional - URL to resource photo
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Example Request</h4>
+                            <pre><code>{
+  <span class="json-key">"resource_name"</span>: <span class="json-string">"Conference Room A"</span>,
+  <span class="json-key">"defined_timings"</span>: [
+    {
+      <span class="json-key">"weekday"</span>: <span class="json-string">"monday"</span>,
+      <span class="json-key">"start_time"</span>: <span class="json-string">"09:00:00"</span>,
+      <span class="json-key">"end_time"</span>: <span class="json-string">"17:00:00"</span>
+    }
+  ],
+  <span class="json-key">"max_duration"</span>: <span class="json-number">120</span>,
+  <span class="json-key">"min_duration"</span>: <span class="json-number">30</span>,
+  <span class="json-key">"duration_interval"</span>: <span class="json-number">15</span>,
+  <span class="json-key">"start_date"</span>: <span class="json-string">"2025-01-01"</span>,
+  <span class="json-key">"capacity"</span>: <span class="json-number">10</span>,
+  <span class="json-key">"category"</span>: <span class="json-string">"meeting_room"</span>,
+  <span class="json-key">"photo_url"</span>: <span class="json-string">"https://example.com/room.jpg"</span>,
+  <span class="json-key">"rates"</span>: [
+    {
+      <span class="json-key">"price_name"</span>: <span class="json-string">"Standard Hourly Rate"</span>,
+      <span class="json-key">"description"</span>: <span class="json-string">"Basic hourly rate"</span>,
+      <span class="json-key">"price"</span>: <span class="json-number">50</span>,
+      <span class="json-key">"renewal_type"</span>: <span class="json-string">"every hour"</span>
+    }
+  ]
+}</code></pre>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"message"</span>: <span class="json-string">"Resource created successfully"</span>,
+  <span class="json-key">"resource_id"</span>: <span class="json-string">"550e8400-e29b-41d4-a716-446655440000"</span>
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View All Resources -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/viewAllresources</span>
+                            <span class="endpoint-description">Get all resources in the system</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">None</div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"data"</span>: [
+    {
+      <span class="json-key">"id"</span>: <span class="json-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
+      <span class="json-key">"name"</span>: <span class="json-string">"Conference Room A"</span>,
+      <span class="json-key">"max_simultaneous_bookings"</span>: <span class="json-number">1</span>,
+      <span class="json-key">"metadata"</span>: {
+        <span class="json-key">"capacity"</span>: <span class="json-number">10</span>,
+        <span class="json-key">"category"</span>: <span class="json-string">"meeting_room"</span>,
+        <span class="json-key">"rates"</span>: [...]
+      }
+    }
+  ]
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View Resource by Name -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/viewResource/:resource_name</span>
+                            <span class="endpoint-description">Get detailed resource information by name</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(path parameter)</span> - Name of the resource
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Example</h4>
+                            <pre><code>GET /viewResource/Conference%20Room%20A</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Get Resource by Name -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/getResourceByName/:resource_name</span>
+                            <span class="endpoint-description">Get processed resource object with clean structure</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(path parameter)</span> - Name of the resource
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"id"</span>: <span class="json-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
+  <span class="json-key">"name"</span>: <span class="json-string">"Conference Room A"</span>,
+  <span class="json-key">"location_id"</span>: <span class="json-string">"loc_12345"</span>,
+  <span class="json-key">"category"</span>: <span class="json-string">"meeting_room"</span>,
+  <span class="json-key">"capacity"</span>: <span class="json-number">10</span>,
+  <span class="json-key">"metadata"</span>: {
+    <span class="json-key">"rates"</span>: [...],
+    <span class="json-key">"photo_url"</span>: <span class="json-string">"https://example.com/room.jpg"</span>
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delete Resource -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method delete">DELETE</span>
+                            <span class="endpoint-path">/deleteResource/:resource_id</span>
+                            <span class="endpoint-description">Delete a resource by ID</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_id</span> 
+                                    <span class="param-type">(path parameter)</span> - UUID of the resource
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"message"</span>: <span class="json-string">"Resource deleted successfully"</span>
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Schedule Management Section -->
+        <div class="section" id="schedule-management">
+            <div class="section-header">Schedule Management</div>
+            <div class="section-content">
+
+                <!-- Get Resource Schedule Info -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/getResourceScheduleInfo/:resource_name</span>
+                            <span class="endpoint-description">Get complete resource information including schedule details</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(path parameter)</span> - Name of the resource
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">weekday</span> 
+                                    <span class="param-type">(query parameter, optional)</span> - Specific weekday to get schedule block for
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Examples</h4>
+                            <pre><code>GET /getResourceScheduleInfo/Conference%20Room%20A
+GET /getResourceScheduleInfo/Conference%20Room%20A?weekday=monday</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Get All Resource Schedule Blocks -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/getAllResourceScheduleBlocks/:resource_name</span>
+                            <span class="endpoint-description">Get resource with all schedule blocks organized by weekday</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"resource"</span>: {
+    <span class="json-key">"id"</span>: <span class="json-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
+    <span class="json-key">"name"</span>: <span class="json-string">"Conference Room A"</span>
+  },
+  <span class="json-key">"recurring_schedule"</span>: {
+    <span class="json-key">"id"</span>: <span class="json-string">"schedule_123"</span>
+  },
+  <span class="json-key">"schedule_blocks_by_weekday"</span>: {
+    <span class="json-key">"monday"</span>: {
+      <span class="json-key">"id"</span>: <span class="json-string">"block_456"</span>,
+      <span class="json-key">"weekday"</span>: <span class="json-string">"monday"</span>,
+      <span class="json-key">"start_time"</span>: <span class="json-string">"09:00:00"</span>,
+      <span class="json-key">"end_time"</span>: <span class="json-string">"17:00:00"</span>
+    },
+    <span class="json-key">"tuesday"</span>: null,
+    <span class="json-key">"wednesday"</span>: null
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Get Schedule Block -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method get">GET</span>
+                            <span class="endpoint-path">/getScheduleBlock/:resource_name/:weekday</span>
+                            <span class="endpoint-description">Get schedule block with full resource context</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(path parameter)</span> - Name of the resource
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">weekday</span> 
+                                    <span class="param-type">(path parameter)</span> - Day of the week
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Example</h4>
+                            <pre><code>GET /getScheduleBlock/Conference%20Room%20A/monday</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Update Schedule Block -->
+                <div class="endpoint">
+                    <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                        <div class="endpoint-title">
+                            <span class="method patch">PATCH</span>
+                            <span class="endpoint-path">/updateScheduleBlock/:resource_name/:weekday</span>
+                            <span class="endpoint-description">Update schedule block times for a specific resource and weekday</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="endpoint-content">
+                        <div class="param-section">
+                            <h4>Parameters</h4>
+                            <div class="param-list">
+                                <div class="param-item">
+                                    <span class="param-name">resource_name</span> 
+                                    <span class="param-type">(path parameter)</span> - Name of the resource
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">weekday</span> 
+                                    <span class="param-type">(path parameter)</span> - Day of the week
+                                </div>
+                            </div>
+                        </div>
+                        <div class="response-section">
+                            <h4>Request Body</h4>
+                            <pre><code>{
+  <span class="json-key">"start_time"</span>: <span class="json-string">"10:00:00"</span>,
+  <span class="json-key">"end_time"</span>: <span class="json-string">"18:00:00"</span>
+}</code></pre>
+                        </div>
+                        <div class="response-section">
+                            <h4>Response</h4>
+                            <pre><code>{
+  <span class="json-key">"message"</span>: <span class="json-string">"Schedule block updated successfully"</span>,
+  <span class="json-key">"data"</span>: {
+    <span class="json-key">"id"</span>: <span class="json-string">"block_456"</span>,
+    <span class="json-key">"weekday"</span>: <span class="json-string">"monday"</span>,
+    <span class="json-key">"start_time"</span>: <span class="json-string">"10:00:00"</span>,
+    <span class="json-key">"end_time"</span>: <span class="json-string">"18:00:00"</span>
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Error Responses Section -->
+        <div class="section" id="error-responses">
+            <div class="section-header">Error Responses</div>
+            <div class="section-content">
+                <div class="error-section">
+                    <h3>Common Error Responses</h3>
+                    <div class="param-section">
+                        <h4>400 Bad Request</h4>
+                        <pre><code>{
+  <span class="json-key">"error"</span>: <span class="json-string">"Invalid request parameters"</span>
+}</code></pre>
+                    </div>
+                    <div class="param-section">
+                        <h4>404 Not Found</h4>
+                        <pre><code>{
+  <span class="json-key">"error"</span>: <span class="json-string">"Resource not found"</span>
+}</code></pre>
+                    </div>
+                    <div class="param-section">
+                        <h4>422 Unprocessable Entity</h4>
+                        <pre><code>{
+  <span class="json-key">"error"</span>: <span class="json-string">"Rate validation failed: Rate 1: price_name is required"</span>
+}</code></pre>
+                    </div>
+                    <div class="param-section">
+                        <h4>500 Internal Server Error</h4>
+                        <pre><code>{
+  <span class="json-key">"error"</span>: <span class="json-string">"Internal server error"</span>,
+  <span class="json-key">"message"</span>: <span class="json-string">"Detailed error message"</span>
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- References Section -->
+        <div class="section" id="references">
+            <div class="section-header">References</div>
+            <div class="section-content">
+                
+                <div class="reference-section">
+                    <h3>Rate Types</h3>
+                    <div class="reference-list">
+                        <div class="reference-item">
+                            <strong>"every hour"</strong><br>
+                            Hourly billing cycle
+                        </div>
+                        <div class="reference-item">
+                            <strong>"every day"</strong><br>
+                            Daily billing cycle
+                        </div>
+                        <div class="reference-item">
+                            <strong>"every week"</strong><br>
+                            Weekly billing cycle
+                        </div>
+                        <div class="reference-item">
+                            <strong>"every month"</strong><br>
+                            Monthly billing cycle
+                        </div>
+                        <div class="reference-item">
+                            <strong>"every use"</strong><br>
+                            Per-use billing (one-time charge)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="reference-section">
+                    <h3>Weekday Values</h3>
+                    <div class="reference-list">
+                        <div class="reference-item">monday</div>
+                        <div class="reference-item">tuesday</div>
+                        <div class="reference-item">wednesday</div>
+                        <div class="reference-item">thursday</div>
+                        <div class="reference-item">friday</div>
+                        <div class="reference-item">saturday</div>
+                        <div class="reference-item">sunday</div>
+                    </div>
+                </div>
+
+                <div class="reference-section">
+                    <h3>Format References</h3>
+                    <div class="reference-list">
+                        <div class="reference-item">
+                            <strong>Time Format</strong><br>
+                            24-hour format: HH:MM:SS<br>
+                            Example: "09:00:00", "17:30:00"
+                        </div>
+                        <div class="reference-item">
+                            <strong>Date Format</strong><br>
+                            ISO format: YYYY-MM-DD<br>
+                            Example: "2025-01-01"
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function toggleEndpoint(header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('.toggle-icon');
+            
+            content.classList.toggle('active');
+            icon.classList.toggle('active');
+        }
+
+        // Search functionality
+        document.getElementById('searchBox').addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            const endpoints = document.querySelectorAll('.endpoint');
+            
+            endpoints.forEach(endpoint => {
+                const title = endpoint.querySelector('.endpoint-title').textContent.toLowerCase();
+                const description = endpoint.querySelector('.endpoint-description').textContent.toLowerCase();
+                
+                if (title.includes(searchTerm) || description.includes(searchTerm)) {
+                    endpoint.style.display = 'block';
+                } else {
+                    endpoint.style.display = 'none';
+                }
+            });
+        });
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

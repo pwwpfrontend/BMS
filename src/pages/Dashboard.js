@@ -10,6 +10,8 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState([]);
   const [cancelledBookings, setCancelledBookings] = useState([]);
   const [resources, setResources] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [auth0Customers, setAuth0Customers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedResource, setSelectedResource] = useState('all');
@@ -22,11 +24,89 @@ export default function Dashboard() {
       try {
         setLoading(true);
         
-        const [bookingsResponse, resourcesResponse] = await Promise.all([
-          bookingAPI.getAllBookings(true),
-          bookingAPI.getResources()
-        ]);
+        // Auth0 Management API configuration
+        const config = {
+          domain: "bms-optimus.us.auth0.com",
+          clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+          clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
+          audience: "https://bms-optimus.us.auth0.com/api/v2/",
+          userRoleId: "rol_FdjheKGmIFxzp6hR"
+        };
+
+        // Get Auth0 Management API token
+        const getManagementToken = async () => {
+          try {
+            const response = await fetch(`https://${config.domain}/oauth/token`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                client_id: config.clientId,
+                client_secret: config.clientSecret,
+                audience: config.audience,
+                grant_type: "client_credentials",
+                scope: "read:users read:users_app_metadata read:roles",
+              }),
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to get management token');
+            }
+            
+            const data = await response.json();
+            return data.access_token;
+          } catch (error) {
+            console.error("Error getting management token:", error);
+            return null;
+          }
+        };
+
+        // Fetch Auth0 customers
+        const fetchAuth0Customers = async () => {
+          try {
+            const token = await getManagementToken();
+            
+            if (!token) {
+              console.error("Failed to get management token");
+              return [];
+            }
+
+            // Fetch users with the "User" role
+            const roleUsersResponse = await fetch(
+              `${config.audience}roles/${config.userRoleId}/users`,
+              {
+                headers: { 
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+              }
+            );
+
+            if (!roleUsersResponse.ok) {
+              throw new Error('Failed to fetch users with User role');
+            }
+
+            const roleUsers = await roleUsersResponse.json();
+            
+            return roleUsers.map(user => ({
+              id: user.user_id,
+              user_id: user.user_id,
+              email: user.email,
+              name: user.user_metadata?.username || user.name || user.email.split('@')[0]
+            }));
+          } catch (error) {
+            console.error("Error fetching Auth0 customers:", error);
+            return [];
+          }
+        };
         
+        const [bookingsResponse, resourcesResponse, auth0CustomersData] = await Promise.all([
+          bookingAPI.getAllBookings(true),
+          bookingAPI.getResources(),
+          fetchAuth0Customers()
+        ]);
+
+        setAuth0Customers(auth0CustomersData);
+
         // Fetch cancelled booking IDs from the cancelled-meeting API
         const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
           method: 'GET',
@@ -45,8 +125,39 @@ export default function Dashboard() {
 
         console.log(`📋 Dashboard: Found ${cancelledBookingIds.length} cancelled booking IDs`);
 
+        // Helper function to get customer name from booking_id
+        const getCustomerName = (bookingId) => {
+          if (!bookingId) return 'N/A';
+          
+          // Extract user_id from booking_id (format: user_id-timestamp or similar)
+          const parts = String(bookingId).split('_');
+          if (parts.length > 0) {
+            const possibleUserId = parts[0];
+            
+            // Try to find customer in Auth0 customers
+            const customer = auth0CustomersData.find(c => 
+              c.user_id === possibleUserId || 
+              c.user_id.includes(possibleUserId) ||
+              String(bookingId).includes(c.user_id)
+            );
+            
+            if (customer) {
+              return customer.name;
+            }
+          }
+          
+          return 'N/A';
+        };
+
         // Transform all bookings
-        const allTransformedBookings = bookingsResponse.data.map(transformBookingForUI);
+        const allTransformedBookings = bookingsResponse.data.map(booking => {
+          const transformed = transformBookingForUI(booking);
+          const customerName = getCustomerName(booking.id);
+          return {
+            ...transformed,
+            customer: customerName
+          };
+        });
         
         // Separate cancelled and active bookings
         const cancelled = [];
@@ -69,6 +180,7 @@ export default function Dashboard() {
         setBookings(active);
         setCancelledBookings(cancelled);
         setResources(resourcesResponse.data || []);
+        setCustomers(auth0CustomersData);
       } catch (err) {
         setError('Failed to fetch data');
         console.error('Error fetching data:', err);
@@ -116,7 +228,7 @@ export default function Dashboard() {
   const totalBookings = bookings.length;
   const currentMonthConfirmedBookings = getCurrentMonthBookings();
   const totalResources = resources.length;
-  const uniqueCustomers = new Set(bookings.map(b => b.customer).filter(c => c && c !== 'N/A')).size;
+  const totalCustomers = customers.length;
 
   const generateChartData = () => {
     const weekDates = getCurrentWeekDates();
@@ -205,15 +317,19 @@ export default function Dashboard() {
   startOfWeek.setDate(diff);
   startOfWeek.setHours(0, 0, 0, 0);
   
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+  
   const filteredCancelledBookings = cancelledBookings.filter(booking => {
     if (!booking.starts_at) return false;
     const bookingDate = new Date(booking.starts_at);
-    const bookingDateStr = bookingDate.toISOString().split('T')[0];
     
     if (cancelledFilter === 'today') {
+      const bookingDateStr = bookingDate.toISOString().split('T')[0];
       return bookingDateStr === todayStr;
     } else {
-      return bookingDate >= startOfWeek && bookingDate <= today;
+      return bookingDate >= startOfWeek && bookingDate <= endOfWeek;
     }
   });
 
@@ -277,7 +393,7 @@ export default function Dashboard() {
                   <div className="text-sm text-gray-600">Total Customers</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{uniqueCustomers}</div>
+                  <div className="text-3xl font-semibold text-gray-900">{totalCustomers}</div>
                   <Users className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
                 </div>
               </div>
@@ -433,7 +549,7 @@ export default function Dashboard() {
                           {booking.resource?.name || 'N/A'}
                         </div>
                         <div className="text-xs text-gray-500 mb-1">
-                          {booking.customer || 'N/A'}
+                          {booking.customer}
                         </div>
                         <div className="text-xs text-gray-400">
                           {booking.starts_at ? new Date(booking.starts_at).toLocaleDateString('en-US', { 

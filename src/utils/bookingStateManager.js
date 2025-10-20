@@ -191,7 +191,7 @@ class BookingStateManager {
     });
     
     if (validBookings.length !== modifiedBookings.length) {
-      console.log(`Cleaned up ${modifiedBookings.length - validBookings.length} invalid modified bookings`);
+      
       this.setModifiedBookings(validBookings);
     }
   }
