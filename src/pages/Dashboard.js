@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, Package, CreditCard, ChevronDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import bookingAPI from '../services/bookingApi';
-import { transformBookingForUI, getStatusBadgeClass, formatTime } from '../utils/bookingUtils';
+import { getStatusBadgeClass, formatTime } from '../utils/bookingUtils';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -11,13 +10,15 @@ export default function Dashboard() {
   const [cancelledBookings, setCancelledBookings] = useState([]);
   const [resources, setResources] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [auth0Customers, setAuth0Customers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedResource, setSelectedResource] = useState('all');
   const [cancelledFilter, setCancelledFilter] = useState('today');
   const [selectedDate, setSelectedDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // New API base URL
+  const API_BASE_URL = 'https://njs-01.optimuslab.space';
 
   useEffect(() => {
     const fetchData = async () => {
@@ -87,6 +88,8 @@ export default function Dashboard() {
 
             const roleUsers = await roleUsersResponse.json();
             
+            console.log("📋 Auth0 Users fetched:", roleUsers.length);
+            
             return roleUsers.map(user => ({
               id: user.user_id,
               user_id: user.user_id,
@@ -98,66 +101,197 @@ export default function Dashboard() {
             return [];
           }
         };
+
+        // Fetch bookings from NEW API endpoint
+        const fetchBookings = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/booking_system/booking`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch bookings');
+            }
+
+            const bookingsData = await response.json();
+            console.log("📋 Bookings fetched from new API:", bookingsData);
+            return Array.isArray(bookingsData) ? bookingsData : [];
+          } catch (error) {
+            console.error("Error fetching bookings:", error);
+            // Return empty array instead of throwing to allow other data to load
+            return [];
+          }
+        };
+
+        // Fetch resources from NEW API endpoint  
+        const fetchResources = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/booking_system/resources`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch resources');
+            }
+
+            const resourcesData = await response.json();
+            console.log("📦 Resources fetched from new API:", resourcesData);
+            return Array.isArray(resourcesData) ? resourcesData : [];
+          } catch (error) {
+            console.error("Error fetching resources:", error);
+            return [];
+          }
+        };
         
-        const [bookingsResponse, resourcesResponse, auth0CustomersData] = await Promise.all([
-          bookingAPI.getAllBookings(true),
-          bookingAPI.getResources(),
+        const [bookingsData, resourcesData, auth0CustomersData] = await Promise.all([
+          fetchBookings(),
+          fetchResources(),
           fetchAuth0Customers()
         ]);
 
-        setAuth0Customers(auth0CustomersData);
+        console.log("👥 Auth0 customers loaded:", auth0CustomersData.length);
 
         // Fetch cancelled booking IDs from the cancelled-meeting API
-        const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
         let cancelledBookingIds = [];
-        if (cancelledResponse.ok) {
-          const cancelledData = await cancelledResponse.json();
-          cancelledBookingIds = cancelledData
-            .map(item => item.booking_id)
-            .filter(id => id);
+        try {
+          const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (cancelledResponse.ok) {
+            const cancelledData = await cancelledResponse.json();
+            cancelledBookingIds = cancelledData
+              .map(item => item.booking_id)
+              .filter(id => id);
+          }
+        } catch (error) {
+          console.error("Error fetching cancelled bookings:", error);
         }
 
         console.log(`📋 Dashboard: Found ${cancelledBookingIds.length} cancelled booking IDs`);
 
-        // Helper function to get customer name from booking_id
-        const getCustomerName = (bookingId) => {
-          if (!bookingId) return 'N/A';
+        // Helper function to get customer name from booking
+        const getCustomerName = (booking) => {
+          if (!booking) return 'N/A';
           
-          // Extract user_id from booking_id (format: user_id-timestamp or similar)
-          const parts = String(bookingId).split('_');
-          if (parts.length > 0) {
-            const possibleUserId = parts[0];
-            
-            // Try to find customer in Auth0 customers
+          // Priority 1: Check if booking has a 'user' field (email or name)
+          if (booking.user) {
+            // If user is an email, try to match with Auth0
             const customer = auth0CustomersData.find(c => 
-              c.user_id === possibleUserId || 
-              c.user_id.includes(possibleUserId) ||
-              String(bookingId).includes(c.user_id)
+              c.email === booking.user || 
+              c.user_id === booking.user ||
+              c.name.toLowerCase() === booking.user.toLowerCase()
             );
             
             if (customer) {
+              console.log(`✅ Matched booking user "${booking.user}" to customer "${customer.name}"`);
               return customer.name;
+            }
+            
+            // If no match, return the user field as-is (might already be a name)
+            return booking.user;
+          }
+
+          // Priority 2: Check for customer_name field
+          if (booking.customer_name) return booking.customer_name;
+          if (booking.customerName) return booking.customerName;
+          
+          // Priority 3: Extract from booking ID
+          const bookingId = booking.id || booking._id;
+          if (bookingId) {
+            // Try format: "auth0|xxxxx_timestamp" or "userid_timestamp"
+            const parts = String(bookingId).split('_');
+            if (parts.length > 0) {
+              const possibleUserId = parts[0];
+              
+              // Try to find customer in Auth0 customers
+              const customer = auth0CustomersData.find(c => 
+                c.user_id === possibleUserId || 
+                c.user_id.includes(possibleUserId) ||
+                possibleUserId.includes(c.user_id.split('|')[1] || c.user_id)
+              );
+              
+              if (customer) {
+                console.log(`✅ Matched booking ID ${bookingId} to customer ${customer.name}`);
+                return customer.name;
+              }
             }
           }
           
           return 'N/A';
         };
 
-        // Transform all bookings
-        const allTransformedBookings = bookingsResponse.data.map(booking => {
-          const transformed = transformBookingForUI(booking);
-          const customerName = getCustomerName(booking.id);
+        // Helper function to calculate duration
+        const calculateDuration = (start, end) => {
+          if (!start || !end) return 'N/A';
+          try {
+            const startDate = new Date(start);
+            const endDate = new Date(end);
+            const diff = Math.abs(endDate - startDate);
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            if (hours > 0) {
+              return `${hours} hour${hours > 1 ? 's' : ''}`;
+            }
+            return `${minutes} min`;
+          } catch (e) {
+            return 'N/A';
+          }
+        };
+
+        // Transform bookings from new API format
+        const transformBooking = (booking) => {
+          const customerName = getCustomerName(booking);
+          
+          // Find resource details if resourceId exists
+          let resourceInfo = { id: null, name: 'N/A' };
+          if (booking.resource) {
+            const foundResource = resourcesData.find(r => 
+              r.id === booking.resource || 
+              r.name === booking.resource ||
+              r._id === booking.resource
+            );
+            if (foundResource) {
+              resourceInfo = {
+                id: foundResource.id || foundResource._id,
+                name: foundResource.name
+              };
+            } else {
+              // If not found, resource field might be the name itself
+              resourceInfo = {
+                id: booking.resource,
+                name: booking.resource
+              };
+            }
+          }
+          
           return {
-            ...transformed,
-            customer: customerName
+            id: booking.id || booking._id,
+            customer: customerName,
+            resource: resourceInfo,
+            starts_at: booking.startTime || booking.start_time || booking.date,
+            ends_at: booking.endTime || booking.end_time,
+            duration: calculateDuration(
+              booking.startTime || booking.start_time, 
+              booking.endTime || booking.end_time
+            ),
+            status: booking.status || 'Confirmed',
+            is_canceled: false
           };
-        });
+        };
+
+        // Transform all bookings
+        const allTransformedBookings = bookingsData.map(transformBooking);
         
         // Separate cancelled and active bookings
         const cancelled = [];
@@ -176,10 +310,12 @@ export default function Dashboard() {
         });
         
         console.log(`✅ Dashboard: Active bookings: ${active.length}, Cancelled: ${cancelled.length}`);
+        if (active.length > 0) console.log("Sample active booking:", active[0]);
+        if (cancelled.length > 0) console.log("Sample cancelled booking:", cancelled[0]);
         
         setBookings(active);
         setCancelledBookings(cancelled);
-        setResources(resourcesResponse.data || []);
+        setResources(resourcesData);
         setCustomers(auth0CustomersData);
       } catch (err) {
         setError('Failed to fetch data');
@@ -438,7 +574,7 @@ export default function Dashboard() {
                       >
                         <option value="all">All Resources</option>
                         {resources.map(resource => (
-                          <option key={resource.id} value={resource.id}>
+                          <option key={resource.id || resource._id} value={resource.id || resource._id}>
                             {resource.name}
                           </option>
                         ))}

@@ -366,7 +366,7 @@ export default function Resources() {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiRequest('/all-resources', 'GET');
+      const response = await apiRequest('/viewAllresources', 'GET');
       
       const transformedResources = response.data?.map(resource => ({
         id: resource.id,

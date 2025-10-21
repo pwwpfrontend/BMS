@@ -1,4 +1,4 @@
-const BASE_URL = 'http://optimus-india-njs-01.netbird.cloud:4000/booking_system';
+const BASE_URL = 'https://njs-01.optimuslab.space/booking_system';
 
 export async function apiRequest(path, method = 'GET', body = null) {
     try {
