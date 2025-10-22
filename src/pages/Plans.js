@@ -301,10 +301,12 @@ export default function Plans() {
     plan.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const applyFormat = (command, value = null) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
-  };
+ const applyFormat = (command, value = null) => {
+  document.execCommand(command, false, value);
+  const content = editorRef.current.innerHTML;
+  editorRef.current.description = content;
+  editorRef.current?.focus();
+};
 
   const insertLink = () => {
     const url = prompt('Enter the URL:');
@@ -332,9 +334,11 @@ export default function Plans() {
   };
 
   const handleEditorInput = (e) => {
-    const content = e.currentTarget.innerHTML;
-    setNewPlan(prev => ({...prev, description: content}));
-  };
+  const content = e.currentTarget.innerHTML;
+  // Don't update state on every keystroke to prevent cursor jumping
+  // State will be read directly from the contentEditable element when saving
+  editorRef.current.description = content;
+};
 
   // Check if form is valid for saving
   const isFormValid = () => {
@@ -958,18 +962,23 @@ export default function Plans() {
                         </svg>
                       </button>
                     </div>
-                    <div
-                      ref={editorRef}
-                      contentEditable
-                      suppressContentEditableWarning
-                      onInput={handleEditorInput}
-                      dangerouslySetInnerHTML={{ __html: newPlan.description }}
-                      className="min-h-[150px] max-h-[300px] overflow-y-auto px-4 py-3 focus:outline-none text-sm text-gray-900"
-                      style={{ 
-                        wordBreak: 'break-word',
-                        overflowWrap: 'break-word'
-                      }}
-                    />
+                   <div
+  ref={editorRef}
+  contentEditable
+  suppressContentEditableWarning
+  onBlur={(e) => {
+    const content = e.currentTarget.innerHTML;
+    setNewPlan(prev => ({...prev, description: content}));
+  }}
+  defaultValue={newPlan.description}
+  className="min-h-[150px] max-h-[300px] overflow-y-auto px-4 py-3 focus:outline-none text-sm text-gray-900"
+  style={{ 
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
+    direction: 'ltr'
+  }}
+  dangerouslySetInnerHTML={{ __html: newPlan.description }}
+/>
                   </div>
                   {newPlan.description && (
                     <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">

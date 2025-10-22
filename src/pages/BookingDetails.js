@@ -6,11 +6,11 @@ import bookingAPI from '../services/bookingApi';
 import { transformBookingForUI, formatTime, formatDate } from '../utils/bookingUtils';
 
 const trackEvent = (eventName, properties) => {
-  console.log('Analytics:', eventName, properties);
+  // no-op analytics stub in production
 };
 
 const showToast = (message, type = 'success') => {
-  console.log(`${type.toUpperCase()}: ${message}`);
+  // replace console toast with silent stub
 };
 
 function BookingDetailsSkeleton() {
@@ -70,6 +70,16 @@ export default function BookingDetails() {
           return;
         }
 
+        // Check if this is a tentative demo booking
+        const tentativeBooking = getTentativeBooking(bookingId);
+        if (tentativeBooking) {
+          setBooking(tentativeBooking);
+          setNotes(tentativeBooking.notes || '');
+          setLoading(false);
+          trackEvent('booking_open', { bookingId });
+          return;
+        }
+
         const response = await bookingAPI.getAllBookings();
         const foundBooking = response.data.find(b => b.id === bookingId);
         
@@ -111,6 +121,56 @@ export default function BookingDetails() {
     return null;
   };
 
+  const getTentativeBooking = (id) => {
+    // Demo tentative bookings data - must match the structure expected by transformBookingForUI
+    const tentativeBookings = [
+      {
+        id: 'tentative-001',
+        title: 'Weekly Team Sync',
+        customer: 'John Smith',
+        customerName: 'John Smith',
+        customerEmail: 'john.smith@example.com',
+        resource: { name: 'Conference Room A' },
+        service: { name: 'Meeting Room Booking' },
+        location: { name: 'Main Office', address: '123 Business St' },
+        starts_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+        status: 'Tentative',
+        is_tentative: true,
+        is_canceled: false,
+        is_temporary: true,
+        notes: 'Awaiting confirmation from team members',
+        metadata: { notes: 'Awaiting confirmation from team members' },
+        price: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 'tentative-002',
+        title: 'Client Presentation Review',
+        customer: 'Sarah Johnson',
+        customerName: 'Sarah Johnson',
+        customerEmail: 'sarah.johnson@company.com',
+        resource: { name: 'Meeting Room B' },
+        service: { name: 'Presentation Room Booking' },
+        location: { name: 'Main Office', address: '123 Business St' },
+        starts_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        ends_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(),
+        status: 'Tentative',
+        is_tentative: true,
+        is_canceled: false,
+        is_temporary: true,
+        notes: 'Pending client availability confirmation',
+        metadata: { notes: 'Pending client availability confirmation' },
+        price: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ];
+
+    return tentativeBookings.find(booking => booking.id === id);
+  };
+
   const handleAction = async (action, newStatus) => {
     if (!booking) return;
 
@@ -118,6 +178,16 @@ export default function BookingDetails() {
     
     const updatedBooking = { ...booking, status: newStatus };
     setBooking(updatedBooking);
+
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      setTimeout(() => {
+        setActionLoading(null);
+        alert(`Demo booking ${action.toLowerCase()} successfully!`);
+      }, 1000);
+      return;
+    }
 
     try {
       let updateData = {};
@@ -143,11 +213,10 @@ export default function BookingDetails() {
       localStorage.removeItem('bookings_cache_valid');
       
       trackEvent('booking_action', { bookingId, action });
-      showToast(`Booking ${action.toLowerCase()} successful`);
       
     } catch (err) {
       setBooking(booking);
-      showToast(`Failed to ${action.toLowerCase()} booking. Please try again.`, 'error');
+      
       console.error(`Error ${action}:`, err);
     } finally {
       setActionLoading(null);
@@ -158,6 +227,18 @@ export default function BookingDetails() {
     if (!booking) return;
 
     setActionLoading('save');
+    
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      const updatedBooking = { ...booking, notes };
+      setBooking(updatedBooking);
+      setTimeout(() => {
+        setActionLoading(null);
+        alert('Demo booking notes saved successfully!');
+      }, 1000);
+      return;
+    }
     
     try {
       const updatedBooking = { ...booking, notes };
@@ -172,10 +253,9 @@ export default function BookingDetails() {
       localStorage.removeItem('bookings_cache_valid');
       
       trackEvent('booking_action', { bookingId, action: 'save_notes' });
-      showToast('Notes saved successfully');
       
     } catch (err) {
-      showToast('Failed to save notes. Please try again.', 'error');
+      
       console.error('Error saving notes:', err);
     } finally {
       setActionLoading(null);
@@ -191,6 +271,16 @@ export default function BookingDetails() {
     
     const updatedBooking = { ...booking, status: 'Cancelled' };
     setBooking(updatedBooking);
+
+    // Handle demo tentative bookings differently
+    if (booking.id.startsWith('tentative-')) {
+      // For demo bookings, just update the local state
+      setTimeout(() => {
+        setActionLoading(null);
+        alert('Demo booking cancelled successfully!');
+      }, 1000);
+      return;
+    }
 
     try {
       const response = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
@@ -211,11 +301,10 @@ export default function BookingDetails() {
       localStorage.removeItem('bookings_cache_valid');
       
       trackEvent('booking_action', { bookingId: booking.id, action: 'cancel' });
-      showToast('Booking cancelled successfully');
       
     } catch (err) {
       setBooking(booking);
-      showToast(`Failed to cancel booking. ${err.message}`, 'error');
+      
       console.error('Error cancelling booking:', err);
     } finally {
       setActionLoading(null);

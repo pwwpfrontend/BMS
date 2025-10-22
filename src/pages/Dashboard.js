@@ -9,7 +9,7 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState([]);
   const [cancelledBookings, setCancelledBookings] = useState([]);
   const [resources, setResources] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedResource, setSelectedResource] = useState('all');
@@ -17,95 +17,17 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // New API base URL
   const API_BASE_URL = 'https://njs-01.optimuslab.space';
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
-        // Auth0 Management API configuration
-        const config = {
-          domain: "bms-optimus.us.auth0.com",
-          clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
-          clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
-          audience: "https://bms-optimus.us.auth0.com/api/v2/",
-          userRoleId: "rol_FdjheKGmIFxzp6hR"
-        };
 
-        // Get Auth0 Management API token
-        const getManagementToken = async () => {
-          try {
-            const response = await fetch(`https://${config.domain}/oauth/token`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                client_id: config.clientId,
-                client_secret: config.clientSecret,
-                audience: config.audience,
-                grant_type: "client_credentials",
-                scope: "read:users read:users_app_metadata read:roles",
-              }),
-            });
-            
-            if (!response.ok) {
-              throw new Error('Failed to get management token');
-            }
-            
-            const data = await response.json();
-            return data.access_token;
-          } catch (error) {
-            console.error("Error getting management token:", error);
-            return null;
-          }
-        };
-
-        // Fetch Auth0 customers
-        const fetchAuth0Customers = async () => {
-          try {
-            const token = await getManagementToken();
-            
-            if (!token) {
-              console.error("Failed to get management token");
-              return [];
-            }
-
-            // Fetch users with the "User" role
-            const roleUsersResponse = await fetch(
-              `${config.audience}roles/${config.userRoleId}/users`,
-              {
-                headers: { 
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-              }
-            );
-
-            if (!roleUsersResponse.ok) {
-              throw new Error('Failed to fetch users with User role');
-            }
-
-            const roleUsers = await roleUsersResponse.json();
-            
-            console.log("📋 Auth0 Users fetched:", roleUsers.length);
-            
-            return roleUsers.map(user => ({
-              id: user.user_id,
-              user_id: user.user_id,
-              email: user.email,
-              name: user.user_metadata?.username || user.name || user.email.split('@')[0]
-            }));
-          } catch (error) {
-            console.error("Error fetching Auth0 customers:", error);
-            return [];
-          }
-        };
-
-        // Fetch bookings from NEW API endpoint
+        // Fetch all bookings from the new API
         const fetchBookings = async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/booking_system/booking`, {
+            const response = await fetch(`${API_BASE_URL}/booking_hapio/all-bookings`, {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
@@ -116,20 +38,21 @@ export default function Dashboard() {
               throw new Error('Failed to fetch bookings');
             }
 
-            const bookingsData = await response.json();
-            console.log("📋 Bookings fetched from new API:", bookingsData);
-            return Array.isArray(bookingsData) ? bookingsData : [];
+            const result = await response.json();
+            console.log("📋 All bookings fetched:", result);
+            
+            // The response has a "data" field containing the bookings array
+            return result.data || [];
           } catch (error) {
             console.error("Error fetching bookings:", error);
-            // Return empty array instead of throwing to allow other data to load
             return [];
           }
         };
 
-        // Fetch resources from NEW API endpoint  
+        // Fetch resources
         const fetchResources = async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/booking_system/resources`, {
+            const response = await fetch(`${API_BASE_URL}/booking_system/viewAllresources`, {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
@@ -141,94 +64,73 @@ export default function Dashboard() {
             }
 
             const resourcesData = await response.json();
-            console.log("📦 Resources fetched from new API:", resourcesData);
+            console.log("📦 Resources fetched:", resourcesData);
             return Array.isArray(resourcesData) ? resourcesData : [];
           } catch (error) {
             console.error("Error fetching resources:", error);
             return [];
           }
         };
-        
-        const [bookingsData, resourcesData, auth0CustomersData] = await Promise.all([
+
+        // Fetch plans
+        const fetchPlans = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/bhms/plans`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch plans');
+            }
+
+            const plansData = await response.json();
+            console.log("💳 Plans fetched:", plansData);
+            return Array.isArray(plansData) ? plansData : [];
+          } catch (error) {
+            console.error("Error fetching plans:", error);
+            return [];
+          }
+        };
+
+        // Fetch cancelled bookings
+        const fetchCancelledBookings = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/bms/cancelled-meeting`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch cancelled bookings');
+            }
+
+            const cancelledData = await response.json();
+            console.log("❌ Cancelled meetings fetched:", cancelledData);
+            return Array.isArray(cancelledData) ? cancelledData : [];
+          } catch (error) {
+            console.error("Error fetching cancelled bookings:", error);
+            return [];
+          }
+        };
+
+        const [bookingsData, resourcesData, plansData, cancelledData] = await Promise.all([
           fetchBookings(),
           fetchResources(),
-          fetchAuth0Customers()
+          fetchPlans(),
+          fetchCancelledBookings()
         ]);
 
-        console.log("👥 Auth0 customers loaded:", auth0CustomersData.length);
-
-        // Fetch cancelled booking IDs from the cancelled-meeting API
-        let cancelledBookingIds = [];
-        try {
-          const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (cancelledResponse.ok) {
-            const cancelledData = await cancelledResponse.json();
-            cancelledBookingIds = cancelledData
-              .map(item => item.booking_id)
-              .filter(id => id);
-          }
-        } catch (error) {
-          console.error("Error fetching cancelled bookings:", error);
-        }
+        // Extract cancelled booking IDs
+        const cancelledBookingIds = cancelledData
+          .map(item => item.booking_id)
+          .filter(id => id);
 
         console.log(`📋 Dashboard: Found ${cancelledBookingIds.length} cancelled booking IDs`);
-
-        // Helper function to get customer name from booking
-        const getCustomerName = (booking) => {
-          if (!booking) return 'N/A';
-          
-          // Priority 1: Check if booking has a 'user' field (email or name)
-          if (booking.user) {
-            // If user is an email, try to match with Auth0
-            const customer = auth0CustomersData.find(c => 
-              c.email === booking.user || 
-              c.user_id === booking.user ||
-              c.name.toLowerCase() === booking.user.toLowerCase()
-            );
-            
-            if (customer) {
-              console.log(`✅ Matched booking user "${booking.user}" to customer "${customer.name}"`);
-              return customer.name;
-            }
-            
-            // If no match, return the user field as-is (might already be a name)
-            return booking.user;
-          }
-
-          // Priority 2: Check for customer_name field
-          if (booking.customer_name) return booking.customer_name;
-          if (booking.customerName) return booking.customerName;
-          
-          // Priority 3: Extract from booking ID
-          const bookingId = booking.id || booking._id;
-          if (bookingId) {
-            // Try format: "auth0|xxxxx_timestamp" or "userid_timestamp"
-            const parts = String(bookingId).split('_');
-            if (parts.length > 0) {
-              const possibleUserId = parts[0];
-              
-              // Try to find customer in Auth0 customers
-              const customer = auth0CustomersData.find(c => 
-                c.user_id === possibleUserId || 
-                c.user_id.includes(possibleUserId) ||
-                possibleUserId.includes(c.user_id.split('|')[1] || c.user_id)
-              );
-              
-              if (customer) {
-                console.log(`✅ Matched booking ID ${bookingId} to customer ${customer.name}`);
-                return customer.name;
-              }
-            }
-          }
-          
-          return 'N/A';
-        };
 
         // Helper function to calculate duration
         const calculateDuration = (start, end) => {
@@ -249,44 +151,27 @@ export default function Dashboard() {
           }
         };
 
-        // Transform bookings from new API format
+        // Transform booking from new API format
         const transformBooking = (booking) => {
-          const customerName = getCustomerName(booking);
+          // Get user name from metadata
+          const userName = booking.metadata?.user_name || 'N/A';
           
-          // Find resource details if resourceId exists
-          let resourceInfo = { id: null, name: 'N/A' };
-          if (booking.resource) {
-            const foundResource = resourcesData.find(r => 
-              r.id === booking.resource || 
-              r.name === booking.resource ||
-              r._id === booking.resource
-            );
-            if (foundResource) {
-              resourceInfo = {
-                id: foundResource.id || foundResource._id,
-                name: foundResource.name
-              };
-            } else {
-              // If not found, resource field might be the name itself
-              resourceInfo = {
-                id: booking.resource,
-                name: booking.resource
-              };
-            }
-          }
+          // Get resource name from service
+          const resourceName = booking.service?.name || 'N/A';
           
           return {
-            id: booking.id || booking._id,
-            customer: customerName,
-            resource: resourceInfo,
-            starts_at: booking.startTime || booking.start_time || booking.date,
-            ends_at: booking.endTime || booking.end_time,
-            duration: calculateDuration(
-              booking.startTime || booking.start_time, 
-              booking.endTime || booking.end_time
-            ),
-            status: booking.status || 'Confirmed',
-            is_canceled: false
+            id: booking.id,
+            customer: userName,
+            resource: {
+              id: booking.service?.id || null,
+              name: resourceName
+            },
+            starts_at: booking.starts_at,
+            ends_at: booking.ends_at,
+            duration: calculateDuration(booking.starts_at, booking.ends_at),
+            status: booking.is_canceled ? 'Cancelled' : 'Confirmed',
+            is_canceled: booking.is_canceled,
+            location: booking.location?.name || 'N/A'
           };
         };
 
@@ -310,13 +195,11 @@ export default function Dashboard() {
         });
         
         console.log(`✅ Dashboard: Active bookings: ${active.length}, Cancelled: ${cancelled.length}`);
-        if (active.length > 0) console.log("Sample active booking:", active[0]);
-        if (cancelled.length > 0) console.log("Sample cancelled booking:", cancelled[0]);
         
         setBookings(active);
         setCancelledBookings(cancelled);
         setResources(resourcesData);
-        setCustomers(auth0CustomersData);
+        setPlans(plansData);
       } catch (err) {
         setError('Failed to fetch data');
         console.error('Error fetching data:', err);
@@ -364,7 +247,7 @@ export default function Dashboard() {
   const totalBookings = bookings.length;
   const currentMonthConfirmedBookings = getCurrentMonthBookings();
   const totalResources = resources.length;
-  const totalCustomers = customers.length;
+  const totalPlans = plans.length;
 
   const generateChartData = () => {
     const weekDates = getCurrentWeekDates();
@@ -522,19 +405,6 @@ export default function Dashboard() {
               </div>
 
               <div 
-                onClick={() => navigate('/customers')}
-                className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-sm text-gray-600">Total Customers</div>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{totalCustomers}</div>
-                  <Users className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
-                </div>
-              </div>
-
-              <div 
                 onClick={() => navigate('/resources')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
               >
@@ -549,14 +419,26 @@ export default function Dashboard() {
 
               <div 
                 onClick={() => navigate('/plans')}
+                className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="text-sm text-gray-600">Total Plans</div>
+                </div>
+                <div className="flex items-end justify-between">
+                  <div className="text-3xl font-semibold text-gray-900">{totalPlans}</div>
+                  <CreditCard className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
+                </div>
+              </div>
+
+              <div 
                 className="bg-[#214BAE] rounded-lg p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="text-sm text-blue-100">Plans</div>
+                  <div className="text-sm text-blue-100">Cancelled Bookings</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-white">03</div>
-                  <CreditCard className="w-5 h-5 text-white" strokeWidth={1.5} />
+                  <div className="text-3xl font-semibold text-white">{cancelledBookings.length}</div>
+                  <Calendar className="w-5 h-5 text-white" strokeWidth={1.5} />
                 </div>
               </div>
             </div>
@@ -684,8 +566,8 @@ export default function Dashboard() {
                         <div className="text-sm font-semibold text-gray-900 mb-1.5">
                           {booking.resource?.name || 'N/A'}
                         </div>
-                        <div className="text-xs text-gray-500 mb-1">
-                          {booking.customer}
+                        <div className="text-xs text-gray-600 mb-1.5 font-medium">
+                          User: {booking.customer}
                         </div>
                         <div className="text-xs text-gray-400">
                           {booking.starts_at ? new Date(booking.starts_at).toLocaleDateString('en-US', { 
@@ -743,7 +625,7 @@ export default function Dashboard() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resource</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Time</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Time</th>
@@ -755,7 +637,7 @@ export default function Dashboard() {
                     {recentBookings.length > 0 ? (
                       recentBookings.map((booking) => (
                         <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-3.5 text-sm text-gray-900">{booking.customer}</td>
+                          <td className="px-6 py-3.5 text-sm text-gray-900 font-medium">{booking.customer}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{booking.resource?.name || 'N/A'}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{formatTime(booking.starts_at)}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{formatTime(booking.ends_at)}</td>

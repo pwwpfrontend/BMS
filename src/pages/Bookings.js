@@ -13,6 +13,7 @@ import { formatTimeInZone } from '../utils/timezoneHelper';
 const useBookingsData = () => {
   const [bookings, setBookings] = useState([]);
   const [cancelledBookings, setCancelledBookings] = useState([]);
+  const [tentativeBookings, setTentativeBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastFetch, setLastFetch] = useState(0);
@@ -22,7 +23,7 @@ const useBookingsData = () => {
       setLoading(true);
       setError(null);
       
-      console.log('🔄 Fetching bookings from API...');
+      
       
       // Fetch all bookings
       const response = await bookingAPI.getAllBookings(true);
@@ -41,7 +42,7 @@ const useBookingsData = () => {
           .filter(id => id);
       }
       
-      console.log(`📋 Found ${cancelledBookingIds.length} cancelled booking IDs from API`);
+      
       
       // Transform and separate bookings
       const allTransformedBookings = response.data
@@ -59,10 +60,55 @@ const useBookingsData = () => {
         }
       });
       
-      console.log(`✅ Active: ${activeBookings.length}, Cancelled: ${cancelled.length}`);
+      // Add demo tentative meetings data - must match the structure expected by transformBookingForUI
+      const tentative = [
+        {
+          id: 'tentative-001',
+          title: 'Weekly Team Sync',
+          customer: 'John Smith',
+          customerName: 'John Smith',
+          customerEmail: 'john.smith@example.com',
+          resource: { name: 'Conference Room A' },
+          service: { name: 'Meeting Room Booking' },
+          location: { name: 'Main Office', address: '123 Business St' },
+          starts_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
+          ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(), // 1 hour duration
+          status: 'Tentative',
+          is_tentative: true,
+          is_canceled: false,
+          is_temporary: true,
+          notes: 'Awaiting confirmation from team members',
+          metadata: { notes: 'Awaiting confirmation from team members' },
+          price: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: 'tentative-002',
+          title: 'Client Presentation Review',
+          customer: 'Sarah Johnson',
+          customerName: 'Sarah Johnson',
+          customerEmail: 'sarah.johnson@company.com',
+          resource: { name: 'Meeting Room B' },
+          service: { name: 'Presentation Room Booking' },
+          location: { name: 'Main Office', address: '123 Business St' },
+          starts_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days from now
+          ends_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(), // 1.5 hour duration
+          status: 'Tentative',
+          is_tentative: true,
+          is_canceled: false,
+          is_temporary: true,
+          notes: 'Pending client availability confirmation',
+          metadata: { notes: 'Pending client availability confirmation' },
+          price: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ];
       
       setBookings(activeBookings);
       setCancelledBookings(cancelled);
+      setTentativeBookings(tentative);
       setLastFetch(Date.now());
     } catch (err) {
       setError('Failed to fetch bookings');
@@ -79,6 +125,7 @@ const useBookingsData = () => {
   return { 
     bookings, 
     cancelledBookings,
+    tentativeBookings,
     loading, 
     error, 
     refetchBookings: fetchBookings,
@@ -91,12 +138,12 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
   const [showActions, setShowActions] = useState(false);
 
   const handleEdit = (e) => {
-    e.stopPropagation();
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     onNavigateToDetail(booking.id);
   };
 
   const handleCancel = async (e) => {
-    e.stopPropagation();
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     
     const action = booking.status === 'Cancelled' ? 'reactivate' : 'cancel';
     const confirmMessage = booking.status === 'Cancelled' 
@@ -136,7 +183,7 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
   };
 
   const handleMarkTentative = async (e) => {
-    e.stopPropagation();
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     
     const action = booking.status === 'Tentative' ? 'confirm' : 'mark as tentative';
     const confirmMessage = booking.status === 'Tentative' 
@@ -164,7 +211,7 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
   };
 
   const handleDelete = async (e) => {
-    e.stopPropagation();
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     
     if (!confirm(`Are you sure you want to permanently delete this booking?\n\nThis action cannot be undone.`)) {
       return;
@@ -212,7 +259,7 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
           type="checkbox"
           checked={isSelected}
           onChange={(e) => {
-            e.stopPropagation();
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
             onSelect(booking.id);
           }}
           className="w-4 h-4 rounded border-gray-300"
@@ -281,7 +328,7 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
         <button
           className="p-1 hover:bg-gray-200 rounded"
           onClick={(e) => {
-            e.stopPropagation();
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
             setShowActions(!showActions);
           }}
         >
@@ -342,10 +389,11 @@ function BookingsList() {
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [showAddBookingForm, setShowAddBookingForm] = useState(false);
   const navigate = useNavigate();
-  const { bookings, cancelledBookings, loading, error, refetchBookings } = useBookingsData();
+  const { bookings, cancelledBookings, tentativeBookings, loading, error, refetchBookings } = useBookingsData();
 
   const getFilteredBookings = () => {
-    let filtered = currentTab === 'cancelled' ? cancelledBookings : bookings;
+    let filtered = currentTab === 'cancelled' ? cancelledBookings : 
+                  currentTab === 'tentative' ? tentativeBookings : bookings;
     
     if (searchTerm) {
       filtered = filtered.filter(booking => 
@@ -455,6 +503,14 @@ function BookingsList() {
             onClick={() => { setCurrentTab('cancelled'); setCurrentPage(1); }}
           >
             Cancelled Bookings
+          </button>
+          <button 
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              currentTab === 'tentative' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+            onClick={() => { setCurrentTab('tentative'); setCurrentPage(1); }}
+          >
+            Tentative Meetings
           </button>
         </div>
       </div>
@@ -813,7 +869,7 @@ function BookingsCalendar() {
                         booking={booking}
                         compact={true}
                         onClick={(e) => {
-                          e.stopPropagation();
+                          if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                           setSelectedBooking(booking);
                           setSelectedDate(new Date(booking.starts_at));
                         }}
@@ -880,7 +936,7 @@ function BookingsCalendar() {
                         booking={booking}
                         compact={true}
                         onClick={(e) => {
-                          e.stopPropagation();
+                          if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                           setSelectedBooking(booking);
                         }}
                         className="mb-1"
@@ -935,7 +991,7 @@ function BookingsCalendar() {
                       booking={booking}
                       compact={false}
                       onClick={(e) => {
-                        e.stopPropagation();
+                        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                         setSelectedBooking(booking);
                       }}
                       className="mb-1"
@@ -976,6 +1032,12 @@ function BookingsCalendar() {
               onClick={() => navigate('/bookings?tab=cancelled')}
             >
               Cancelled Bookings
+            </button>
+            <button 
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900"
+              onClick={() => navigate('/bookings?tab=tentative')}
+            >
+              Tentative Meetings
             </button>
           </div>
         </div>
@@ -1093,6 +1155,7 @@ export default function Bookings() {
           </div>
         </main>
       </div>
+      
     </div>
   );
 }

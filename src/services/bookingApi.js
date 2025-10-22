@@ -1,4 +1,4 @@
-const BASE_URL = 'https://njs-01.optimuslab.space/booking_system';
+const BASE_URL = 'https://njs-01.optimuslab.space/booking_hapio';
 
 class BookingAPI {
   // Helper method to make API requests
@@ -50,7 +50,7 @@ class BookingAPI {
   }
 
   async getResources() {
-    return this.apiRequest('/viewAllresources');
+    return this.apiRequest('/all-resources');
   }
 
   async getServices() {
