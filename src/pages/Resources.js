@@ -1769,63 +1769,99 @@ function LimitationsTab({ resource, onUpdate }) {
           setScheduleLoading(true);
           setScheduleError(null);
           
-          console.log('Loading schedule data for resource:', resource.name);
-          
-          // Get resource data using the Resource Management API
-          let response;
+          // Get schedule blocks using the API endpoint
+          let scheduleBlocksResponse;
           try {
-            response = await apiRequest(`/viewResource/${encodeURIComponent(resource.name)}`, 'GET');
-            console.log('Resource data loaded:', response);
-          } catch (resourceError) {
-            console.error('Failed to load resource data:', resourceError);
-            throw resourceError;
+            scheduleBlocksResponse = await apiRequest(`/getAllResourceScheduleBlocks/${encodeURIComponent(resource.name)}`, 'GET');
+          } catch (scheduleError) {
+            console.log('Failed to load schedule blocks, falling back to resource data:', scheduleError);
+            scheduleBlocksResponse = null;
           }
-          
-          // Load schedule from defined_timings in resource data
-          const resourceData = response.data && response.data[0] ? response.data[0] : response;
-          console.log('Loading schedule from defined_timings:', resourceData.defined_timings);
           
           const scheduleData = {};
           const newGrid = Array.from({ length: 24 }, () => Array(7).fill(false));
           
-          if (resourceData.defined_timings && resourceData.defined_timings.length > 0) {
-            resourceData.defined_timings.forEach(timing => {
-              const dayIndex = weekdays.indexOf(timing.weekday);
-              if (dayIndex !== -1) {
-                scheduleData[timing.weekday] = {
-                  start_time: timing.start_time,
-                  end_time: timing.end_time
+          // Process schedule blocks from API response
+          if (scheduleBlocksResponse && scheduleBlocksResponse.schedule_blocks_by_weekday) {
+            const scheduleBlocksByWeekday = scheduleBlocksResponse.schedule_blocks_by_weekday;
+            
+            // Process each weekday's schedule block
+            weekdays.forEach(weekday => {
+              const block = scheduleBlocksByWeekday[weekday];
+              if (block && block.start_time && block.end_time) {
+                scheduleData[weekday] = {
+                  start_time: block.start_time,
+                  end_time: block.end_time,
+                  id: block.id
                 };
                 
-                const startHour = parseInt(timing.start_time.split(':')[0]);
-                const endHour = parseInt(timing.end_time.split(':')[0]);
+                const dayIndex = weekdays.indexOf(weekday);
+                const startHour = parseInt(block.start_time.split(':')[0]);
+                const endHour = parseInt(block.end_time.split(':')[0]);
+                
+                // Mark hours as available in the grid
                 for (let h = startHour; h < endHour; h++) {
                   newGrid[h][dayIndex] = true;
                 }
-                console.log(`Loaded schedule from defined_timings for ${timing.weekday}: ${timing.start_time} - ${timing.end_time}`);
               }
             });
             
             setScheduleData(scheduleData);
             setAvailabilityGrid(newGrid);
-            console.log('Updated availability grid from defined_timings:', newGrid);
           } else {
-            console.log('No schedule_blocks_by_weekday found, initializing with default');
-            // Initialize with default schedule if no data
-            const defaultSchedule = {};
-            weekdays.forEach(day => {
-              defaultSchedule[day] = { start_time: '09:00:00', end_time: '17:00:00' };
-            });
-            setScheduleData(defaultSchedule);
-            
-            // Also update the grid with default schedule
-            const newGrid = Array.from({ length: 24 }, () => Array(7).fill(false));
-            for (let d = 0; d < 5; d++) { // Monday to Friday
-              for (let h = 9; h <= 17; h++) { // 9 AM to 5 PM
-                newGrid[h][d] = true;
-              }
+            // Fallback: Get resource data using the Resource Management API
+            let response;
+            try {
+              response = await apiRequest(`/viewResource/${encodeURIComponent(resource.name)}`, 'GET');
+              console.log('Resource data loaded:', response);
+            } catch (resourceError) {
+              console.error('Failed to load resource data:', resourceError);
+              throw resourceError;
             }
-            setAvailabilityGrid(newGrid);
+            
+            // Load schedule from defined_timings in resource data
+            const resourceData = response.data && response.data[0] ? response.data[0] : response;
+            console.log('Loading schedule from defined_timings:', resourceData.defined_timings);
+            
+            if (resourceData.defined_timings && resourceData.defined_timings.length > 0) {
+              resourceData.defined_timings.forEach(timing => {
+                const dayIndex = weekdays.indexOf(timing.weekday);
+                if (dayIndex !== -1) {
+                  scheduleData[timing.weekday] = {
+                    start_time: timing.start_time,
+                    end_time: timing.end_time
+                  };
+                  
+                  const startHour = parseInt(timing.start_time.split(':')[0]);
+                  const endHour = parseInt(timing.end_time.split(':')[0]);
+                  for (let h = startHour; h < endHour; h++) {
+                    newGrid[h][dayIndex] = true;
+                  }
+                  console.log(`Loaded schedule from defined_timings for ${timing.weekday}: ${timing.start_time} - ${timing.end_time}`);
+                }
+              });
+              
+              setScheduleData(scheduleData);
+              setAvailabilityGrid(newGrid);
+              console.log('Updated availability grid from defined_timings:', newGrid);
+            } else {
+              console.log('No schedule data found, initializing with default');
+              // Initialize with default schedule if no data
+              const defaultSchedule = {};
+              weekdays.forEach(day => {
+                defaultSchedule[day] = { start_time: '09:00:00', end_time: '17:00:00' };
+              });
+              setScheduleData(defaultSchedule);
+              
+              // Also update the grid with default schedule
+              const newGrid = Array.from({ length: 24 }, () => Array(7).fill(false));
+              for (let d = 0; d < 5; d++) { // Monday to Friday
+                for (let h = 9; h <= 17; h++) { // 9 AM to 5 PM
+                  newGrid[h][d] = true;
+                }
+              }
+              setAvailabilityGrid(newGrid);
+            }
           }
         } catch (err) {
           console.error('Error loading schedule data:', err);
@@ -1975,67 +2011,40 @@ function LimitationsTab({ resource, onUpdate }) {
         const scheduleData = convertGridToScheduleData();
         console.log('Converted schedule data:', scheduleData);
 
-        // First, update the resource with defined_timings
-        const definedTimings = [];
+        // Update each weekday's schedule block using the new API endpoint
+        const updatePromises = [];
+        
         weekdays.forEach((weekday) => {
           const daySchedule = scheduleData[weekday];
           if (daySchedule && daySchedule.start_time && daySchedule.end_time) {
-            definedTimings.push({
-              weekday: weekday,
+            const updateData = {
               start_time: daySchedule.start_time,
               end_time: daySchedule.end_time
+            };
+            
+            console.log(`Updating schedule block for ${weekday}:`, updateData);
+            
+            const updatePromise = apiRequest(
+              `/updateScheduleBlock/${encodeURIComponent(resource.name)}/${weekday}`, 
+              'PATCH', 
+              updateData
+            ).then(response => {
+              console.log(`Schedule block updated for ${weekday}:`, response);
+              return response;
+            }).catch(error => {
+              console.error(`Failed to update schedule block for ${weekday}:`, error);
+              throw error;
             });
+            
+            updatePromises.push(updatePromise);
           }
         });
 
-        console.log('Defined timings for resource update:', definedTimings);
-
-        // Update the resource with the new schedule using PUT API
-        const resourceData = {
-          resource_name: resource.name,
-          category: resource.category,
-          resource_details: {
-            description: resource.details?.resourceDetails || ''
-          },
-          email_confirmation: resource.email_confirmation || false,
-          photo_url: resource.image,
-          defined_timings: definedTimings, // Include schedule in resource update
-          max_duration: resource.max_duration || 120,
-          min_duration: resource.min_duration || 30,
-          duration_interval: resource.duration_interval || 15,
-          start_date: resource.start_date || new Date().toISOString().split('T')[0],
-          capacity: resource.limitations?.capacity || 10,
-          rates: resource.rates || [],
-          // Add metadata structure that the API expects
-          metadata: {
-            capacity: resource.limitations?.capacity || 10,
-            category: resource.category,
-            photo_url: resource.image,
-            location_id: "hk_hong_kong_001", // Default Hong Kong location
-            resource_details: {
-              description: resource.details?.resourceDetails || ''
-            },
-            email_confirmation: resource.email_confirmation || false,
-            rates: resource.rates || []
-          }
-        };
-
-        let response;
-        if (resource.id) {
-          // Update existing resource with schedule
-          console.log('Updating resource with schedule data:', resourceData);
-          response = await apiRequest(`/updateResource/${resource.id}`, 'PUT', resourceData);
-          console.log('Resource update response:', response);
-        } else {
-          // Create new resource with schedule
-          console.log('Creating resource with schedule data:', resourceData);
-          response = await apiRequest('/createResource', 'POST', resourceData);
-          console.log('Resource create response:', response);
+        // Wait for all schedule block updates to complete
+        if (updatePromises.length > 0) {
+          await Promise.all(updatePromises);
+          console.log('All schedule blocks updated successfully');
         }
-
-        // Note: Individual schedule block updates are disabled for now due to API limitations
-        // The schedule is saved through the defined_timings in the resource update above
-        console.log('Schedule saved through defined_timings in resource update');
 
         // Show success message
         const successMessage = document.createElement('div');
@@ -2166,6 +2175,7 @@ function LimitationsTab({ resource, onUpdate }) {
               <div className="flex items-center gap-2 mb-4">
                 <button onClick={() => applyPreset('monfri')} className="px-3 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50">Mon–Fri</button>
                 <button onClick={() => applyPreset('everyday')} className="px-3 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50">Every day</button>
+                
                 <button
                   onClick={handleSaveSchedule}
                   disabled={isSavingSchedule}
