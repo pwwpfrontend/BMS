@@ -1,8 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import { Search, SlidersHorizontal, Download, Menu, MapPin, Plus, Calendar, Clock, Save, X, Check, AlertCircle, Trash2, Edit, Eye, MoreVertical, Filter, Users, DollarSign, Upload, Link as LinkIcon, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, Undo, Redo } from 'lucide-react';
-import { apiRequest } from '../utils/api';
+import { apiRequest } from '../utils/ResourceApi';
 import imageApi from '../services/imageApi';
+
+// Helper functions for unit conversion
+const convertToMinutes = (value, unit) => {
+  switch (unit) {
+    case 'minutes': return value;
+    case 'hours': return value * 60;
+    case 'days': return value * 24 * 60;
+    default: return value;
+  }
+};
+
+const convertFromMinutes = (minutes, unit) => {
+  switch (unit) {
+    case 'minutes': return minutes;
+    case 'hours': return Math.round(minutes / 60);
+    case 'days': return Math.round(minutes / (24 * 60));
+    default: return minutes;
+  }
+};
 
 function DeleteConfirmModal({ isOpen, onClose, onConfirm, resourceName, resourceCount }) {
   if (!isOpen) return null;
@@ -1724,6 +1743,9 @@ function LimitationsTab({ resource, onUpdate }) {
       duration: false,
       customerTeams: false
     });
+    
+    // Local state for capacity input to improve performance
+    const [localCapacity, setLocalCapacity] = useState(resource.limitations?.capacity || 10);
 
     // Original grid-based availability system
     const [availabilityGrid, setAvailabilityGrid] = useState(() => {
@@ -1737,7 +1759,8 @@ function LimitationsTab({ resource, onUpdate }) {
           if (dayIndex !== -1) {
             const startHour = parseInt(timing.start_time.split(':')[0]);
             const endHour = parseInt(timing.end_time.split(':')[0]);
-            for (let h = startHour; h < endHour; h++) {
+            // Loop from startHour to endHour (inclusive of end time)
+            for (let h = startHour; h <= endHour; h++) {
               grid[h][dayIndex] = true;
             }
           }
@@ -1800,7 +1823,8 @@ function LimitationsTab({ resource, onUpdate }) {
                 const endHour = parseInt(block.end_time.split(':')[0]);
                 
                 // Mark hours as available in the grid
-                for (let h = startHour; h < endHour; h++) {
+                // Loop from startHour to endHour (inclusive of end time)
+                for (let h = startHour; h <= endHour; h++) {
                   newGrid[h][dayIndex] = true;
                 }
               }
@@ -1834,7 +1858,8 @@ function LimitationsTab({ resource, onUpdate }) {
                   
                   const startHour = parseInt(timing.start_time.split(':')[0]);
                   const endHour = parseInt(timing.end_time.split(':')[0]);
-                  for (let h = startHour; h < endHour; h++) {
+                  // Loop from startHour to endHour (inclusive of end time)
+                  for (let h = startHour; h <= endHour; h++) {
                     newGrid[h][dayIndex] = true;
                   }
                   console.log(`Loaded schedule from defined_timings for ${timing.weekday}: ${timing.start_time} - ${timing.end_time}`);
@@ -1890,11 +1915,49 @@ function LimitationsTab({ resource, onUpdate }) {
       loadScheduleData();
     }, [resource.name]);
 
-    const [durationState, setDurationState] = useState({
-      max_duration: resource.max_duration || 120,
-      min_duration: resource.min_duration || 30,
-      duration_interval: resource.duration_interval || 15
+
+    // Initialize duration state from metadata
+    const getDurationFromMetadata = (field) => {
+      const metadata = resource.metadata || {};
+      const duration = metadata.duration || {};
+      return duration[field] || (field === 'max_duration' ? 120 : field === 'min_duration' ? 30 : 15);
+    };
+
+    const [durationState, setDurationState] = useState(() => {
+      const metadata = resource.metadata || {};
+      const duration = metadata.duration || {};
+      
+      return {
+        max_duration: duration.max_duration || 120,
+        min_duration: duration.min_duration || 30,
+        duration_interval: duration.duration_interval || 15,
+        max_duration_type: duration.max_duration === null ? 'unlimited' : 'limited',
+        min_duration_type: duration.min_duration === null ? 'unlimited' : 'limited',
+        fixed_interval_type: duration.duration_interval === null ? 'any' : 'fixed',
+        max_duration_unit: 'minutes',
+        min_duration_unit: 'minutes',
+        duration_interval_unit: 'minutes'
+      };
     });
+
+    // Update duration state when resource changes (e.g., after page refresh)
+    useEffect(() => {
+      const metadata = resource.metadata || {};
+      const duration = metadata.duration || {};
+      
+      setDurationState({
+        max_duration: duration.max_duration || 120,
+        min_duration: duration.min_duration || 30,
+        duration_interval: duration.duration_interval || 15,
+        max_duration_type: duration.max_duration === null ? 'unlimited' : 'limited',
+        min_duration_type: duration.min_duration === null ? 'unlimited' : 'limited',
+        fixed_interval_type: duration.duration_interval === null ? 'any' : 'fixed',
+        max_duration_unit: 'minutes',
+        min_duration_unit: 'minutes',
+        duration_interval_unit: 'minutes'
+      });
+    }, [resource.metadata]);
+
 
     // Grid interaction state
     const [isDragging, setIsDragging] = useState(false);
@@ -2099,7 +2162,13 @@ function LimitationsTab({ resource, onUpdate }) {
               { weekday: "friday", start_time: "09:00:00", end_time: "18:00:00" },
               { weekday: "saturday", start_time: "09:00:00", end_time: "18:00:00" },
               { weekday: "sunday", start_time: "09:00:00", end_time: "18:00:00" }
-            ]
+            ],
+            // Store duration values in metadata (already in minutes)
+            duration: {
+              max_duration: durationState.max_duration_type === 'unlimited' ? null : durationState.max_duration,
+              min_duration: durationState.min_duration_type === 'unlimited' ? null : durationState.min_duration,
+              duration_interval: durationState.fixed_interval_type === 'any' ? null : durationState.duration_interval
+            }
           }
         };
         
@@ -2260,15 +2329,6 @@ function LimitationsTab({ resource, onUpdate }) {
                   </tbody>
                 </table>
                   </div>
-                  
-              <div className="flex justify-end mt-4">
-                <button 
-                  onClick={handleSaveLimitations}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                >
-                  Save
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -2281,7 +2341,7 @@ function LimitationsTab({ resource, onUpdate }) {
           >
             <div className="text-left">
               <h3 className="font-semibold text-gray-900">Duration</h3>
-              <p className="text-sm text-gray-500">Control how long or short bookings can be and the times they can start and end.</p>
+              <p className="text-sm text-gray-500">These parameters let you control how long or short bookings can be and the times they can start and end.</p>
             </div>
             <svg 
               className={`w-5 h-5 text-gray-400 transition-transform ${expandedSections.duration ? 'rotate-180' : ''}`}
@@ -2296,37 +2356,215 @@ function LimitationsTab({ resource, onUpdate }) {
           {expandedSections.duration && (
             <div className="p-4 border-t border-gray-200 bg-gray-50">
               <div className="space-y-6">
+                {/* Maximum duration */}
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-gray-900">Maximum duration (minutes)</div>
+                  <div className="text-sm font-medium text-gray-900">Maximum duration:</div>
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="max_duration"
+                        value="unlimited"
+                        checked={durationState.max_duration_type === 'unlimited'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, max_duration_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Bookings for this resource can be as long as needed</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="max_duration"
+                        value="limited"
+                        checked={durationState.max_duration_type === 'limited'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, max_duration_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Reject bookings longer than</span>
+                      <div className="ml-2 flex items-center gap-2">
                         <input
                           type="number"
-                    value={durationState.max_duration}
-                    onChange={(e) => setDurationState(prev => ({ ...prev, max_duration: parseInt(e.target.value) || 120 }))}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={convertFromMinutes(durationState.max_duration, durationState.max_duration_unit)}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            const minutes = convertToMinutes(value, durationState.max_duration_unit);
+                            setDurationState(prev => ({ ...prev, max_duration: minutes }));
+                          }}
+                          disabled={durationState.max_duration_type === 'unlimited'}
+                          className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.max_duration_type === 'unlimited' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
                           min="1"
                         />
+                        <select
+                          value={durationState.max_duration_unit}
+                          onChange={(e) => {
+                            const newUnit = e.target.value;
+                            const currentValue = convertFromMinutes(durationState.max_duration, durationState.max_duration_unit);
+                            const newMinutes = convertToMinutes(currentValue, newUnit);
+                            setDurationState(prev => ({ 
+                              ...prev, 
+                              max_duration_unit: newUnit,
+                              max_duration: newMinutes
+                            }));
+                          }}
+                          disabled={durationState.max_duration_type === 'unlimited'}
+                          className={`px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.max_duration_type === 'unlimited' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                    </label>
+                  </div>
         </div>
   
+                {/* Minimum duration */}
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-gray-900">Minimum duration (minutes)</div>
+                  <div className="text-sm font-medium text-gray-900">Minimum duration:</div>
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="min_duration"
+                        value="unlimited"
+                        checked={durationState.min_duration_type === 'unlimited'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, min_duration_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Bookings for this resource can be as short as needed</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="min_duration"
+                        value="limited"
+                        checked={durationState.min_duration_type === 'limited'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, min_duration_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Reject bookings shorter than</span>
+                      <div className="ml-2 flex items-center gap-2">
                         <input
                           type="number"
-                    value={durationState.min_duration}
-                    onChange={(e) => setDurationState(prev => ({ ...prev, min_duration: parseInt(e.target.value) || 30 }))}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={convertFromMinutes(durationState.min_duration, durationState.min_duration_unit)}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            const minutes = convertToMinutes(value, durationState.min_duration_unit);
+                            setDurationState(prev => ({ ...prev, min_duration: minutes }));
+                          }}
+                          disabled={durationState.min_duration_type === 'unlimited'}
+                          className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.min_duration_type === 'unlimited' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
                           min="1"
                         />
+                        <select
+                          value={durationState.min_duration_unit}
+                          onChange={(e) => {
+                            const newUnit = e.target.value;
+                            const currentValue = convertFromMinutes(durationState.min_duration, durationState.min_duration_unit);
+                            const newMinutes = convertToMinutes(currentValue, newUnit);
+                            setDurationState(prev => ({ 
+                              ...prev, 
+                              min_duration_unit: newUnit,
+                              min_duration: newMinutes
+                            }));
+                          }}
+                          disabled={durationState.min_duration_type === 'unlimited'}
+                          className={`px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.min_duration_type === 'unlimited' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                    </label>
+                  </div>
                   </div>
                   
+                {/* Fixed interval */}
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-gray-900">Duration interval (minutes)</div>
+                  <div className="text-sm font-medium text-gray-900">Fixed interval:</div>
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="fixed_interval"
+                        value="any"
+                        checked={durationState.fixed_interval_type === 'any'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, fixed_interval_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Bookings for this resource can be made in any time interval</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="fixed_interval"
+                        value="fixed"
+                        checked={durationState.fixed_interval_type === 'fixed'}
+                        onChange={(e) => setDurationState(prev => ({ ...prev, fixed_interval_type: e.target.value }))}
+                        className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Bookings for this resource must be made in</span>
+                      <div className="ml-2 flex items-center gap-2">
                         <input
                           type="number"
-                    value={durationState.duration_interval}
-                    onChange={(e) => setDurationState(prev => ({ ...prev, duration_interval: parseInt(e.target.value) || 15 }))}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={convertFromMinutes(durationState.duration_interval, durationState.duration_interval_unit)}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            const minutes = convertToMinutes(value, durationState.duration_interval_unit);
+                            setDurationState(prev => ({ ...prev, duration_interval: minutes }));
+                          }}
+                          disabled={durationState.fixed_interval_type === 'any'}
+                          className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.fixed_interval_type === 'any' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
                           min="1"
                         />
+                        <select
+                          value={durationState.duration_interval_unit}
+                          onChange={(e) => {
+                            const newUnit = e.target.value;
+                            const currentValue = convertFromMinutes(durationState.duration_interval, durationState.duration_interval_unit);
+                            const newMinutes = convertToMinutes(currentValue, newUnit);
+                            setDurationState(prev => ({ 
+                              ...prev, 
+                              duration_interval_unit: newUnit,
+                              duration_interval: newMinutes
+                            }));
+                          }}
+                          disabled={durationState.fixed_interval_type === 'any'}
+                          className={`px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            durationState.fixed_interval_type === 'any' 
+                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                              : 'border-gray-300'
+                          }`}
+                        >
+                          <option value="minutes">minutes</option>
+                          <option value="hours">hours</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                      <span className="ml-1 text-sm text-gray-700">intervals</span>
+                    </label>
+                  </div>
                         </div>
                 
                 <div className="flex justify-end">
@@ -2370,18 +2608,18 @@ function LimitationsTab({ resource, onUpdate }) {
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
-                      value={resource.limitations?.capacity || 10}
+                      value={localCapacity}
                       onChange={(e) => {
-                        // Update the resource capacity locally
                         const newCapacity = parseInt(e.target.value) || 10;
-                        // Update the resource object in the parent component
-                        // This will be saved when the user clicks Save
+                        setLocalCapacity(newCapacity);
+                      }}
+                      onBlur={() => {
+                        // Update the resource when user finishes typing
                         if (resource.limitations) {
-                          resource.limitations.capacity = newCapacity;
+                          resource.limitations.capacity = localCapacity;
                         } else {
-                          resource.limitations = { capacity: newCapacity };
+                          resource.limitations = { capacity: localCapacity };
                         }
-                        console.log('Updated capacity to:', newCapacity);
                       }}
                       className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
