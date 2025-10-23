@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
-import { Search, SlidersHorizontal, Download, Menu, MapPin, Plus, Calendar, Clock, Save, X, Check, AlertCircle, Trash2, Edit, Eye, MoreVertical, Filter, Users, DollarSign, Upload, Link as LinkIcon, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, Undo, Redo } from 'lucide-react';
+import { Search, SlidersHorizontal, Download, Menu, MapPin, Plus, Calendar, Clock, Save, X, Check, AlertCircle, Trash2, Edit, Eye, MoreVertical, Filter, Users, DollarSign, Upload } from 'lucide-react';
 import { apiRequest } from '../utils/ResourceApi';
 import imageApi from '../services/imageApi';
 
@@ -23,12 +23,18 @@ const convertFromMinutes = (minutes, unit) => {
   }
 };
 
-function DeleteConfirmModal({ isOpen, onClose, onConfirm, resourceName, resourceCount }) {
+function DeleteConfirmModal({ isOpen, onClose, onConfirm, resourceName, resourceCount, isDeleting }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onClick={isDeleting ? undefined : onClose}
+    >
+      <div 
+        className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-6">
           <div className="flex items-center mb-4">
             <div className="flex-shrink-0 w-10 h-10 mx-auto bg-red-100 rounded-full flex items-center justify-center">
@@ -52,15 +58,31 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, resourceName, resource
             <div className="flex gap-3 justify-center">
               <button
                 onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isDeleting}
+                className={`px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  isDeleting 
+                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
               >
                 Cancel
               </button>
               <button
                 onClick={onConfirm}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                disabled={isDeleting}
+                className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 flex items-center gap-2 ${
+                  isDeleting 
+                    ? 'bg-red-400 text-white cursor-not-allowed' 
+                    : 'bg-red-600 text-white hover:bg-red-700'
+                }`}
               >
-                Delete {resourceCount > 1 ? 'All' : 'Resource'}
+                {isDeleting && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isDeleting ? 'Deleting...' : `Delete ${resourceCount > 1 ? 'All' : 'Resource'}`}
               </button>
             </div>
           </div>
@@ -313,7 +335,8 @@ export default function Resources() {
     const [error, setError] = useState(null); // Add error state
     const [showAddModal, setShowAddModal] = useState(false); 
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [deleteResourceInfo, setDeleteResourceInfo] = useState({ name: '', count: 0 }); 
+    const [deleteResourceInfo, setDeleteResourceInfo] = useState({ name: '', count: 0 });
+    const [isDeleting, setIsDeleting] = useState(false); 
   
     // Fetch resources on mount
     useEffect(() => {
@@ -396,6 +419,7 @@ export default function Resources() {
 
     const handleDeleteConfirm = async () => {
       try {
+        setIsDeleting(true);
         console.log('Starting delete process for resources:', selectedForBulk);
         
         // Delete each selected resource
@@ -420,6 +444,8 @@ export default function Resources() {
         
       } catch (err) {
         console.error('Delete error:', err);
+      } finally {
+        setIsDeleting(false);
       }
     };
 
@@ -642,6 +668,7 @@ useEffect(() => {
         onConfirm={handleDeleteConfirm}
         resourceName={deleteResourceInfo.name}
         resourceCount={deleteResourceInfo.count}
+        isDeleting={isDeleting}
       />
     </div>
   );
@@ -694,6 +721,8 @@ function ResourceDetail({ resource, onBack, onUpdate }) {
           type: 'Free of Charge - CUHK InnoPort',
           category: updatedResource.metadata?.category || 'meeting_room',
           originalData: updatedResource,
+          // Copy the entire metadata object to preserve duration and other data
+          metadata: updatedResource.metadata || {},
           details: {
             resourceDetails: updatedResource.metadata?.resource_details?.description || updatedResource.metadata?.description || '',
             features: Array.isArray(updatedResource.metadata?.resource_details?.features) ? {} : (updatedResource.metadata?.resource_details?.features || {}),
@@ -795,80 +824,39 @@ function DetailsTab({ resource, onUpdate }) {
       resource_name: resource.name || '',
       category: resource.category || '',
       resource_details: resource.details?.resourceDetails || '',
-      email_confirmation: false,
+      email_confirmation: resource.metadata?.email_confirmation || false,
       photo_url: resource.image || null
     });
   
     const [isSaving, setIsSaving] = useState(false);
-    const [showLinkDialog, setShowLinkDialog] = useState(false);
-    const [linkUrl, setLinkUrl] = useState('');
-    const editorRef = useRef(null);
-    const mutationObserverRef = useRef(null);
   
-    // Simple LTR enforcement on mount
+    // Update formData when resource changes (e.g., after page refresh)
     useEffect(() => {
-      if (editorRef.current) {
-        // Initial LTR enforcement only
-        editorRef.current.setAttribute('dir', 'ltr');
-        editorRef.current.style.direction = 'ltr';
-        editorRef.current.style.textAlign = 'left';
-      }
-    }, []);
-  
-    const handleLinkClick = () => {
-      setShowLinkDialog(true);
-      setLinkUrl('');
-    };
-  
-    const handleLinkSubmit = () => {
-      if (linkUrl.trim()) {
-        // Ensure we have a proper URL
-        let url = linkUrl.trim();
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          url = 'https://' + url;
-        }
-        
-        // Create the link
-        document.execCommand('createLink', false, url);
-        
-        // Force LTR direction after creating link
-        setTimeout(() => {
-          ensureLTRDirection();
-        }, 100);
-      }
-      setShowLinkDialog(false);
-      setLinkUrl('');
-    };
-  
-    const handleUndo = () => {
-      document.execCommand('undo');
-    };
-  
-    const handleRedo = () => {
-      document.execCommand('redo');
-    };
-  
-    const ensureLTRDirection = () => {
-      if (editorRef.current) {
-        // Simple LTR enforcement - only on the editor itself
-        editorRef.current.setAttribute('dir', 'ltr');
-        editorRef.current.style.direction = 'ltr';
-        editorRef.current.style.textAlign = 'left';
-      }
-    };
+      setFormData({
+        resource_name: resource.name || '',
+        category: resource.category || '',
+        resource_details: resource.details?.resourceDetails || '',
+        email_confirmation: resource.metadata?.email_confirmation || false,
+        photo_url: resource.image || null
+      });
+    }, [resource]);
   
     const handleSave = async () => {
       try {
         setIsSaving(true);
         
-        // Prepare resource data with ALL data in metadata only
+        // Prepare resource data - preserve existing metadata and only update changed fields
+        const existingMetadata = resource.metadata || {};
         const resourceData = {
           name: formData.resource_name,
           metadata: {
+            // Preserve existing metadata
+            ...existingMetadata,
+            // Update only the fields we're changing
             capacity: resource.limitations?.capacity || 10,
             category: formData.category,
             photo_url: formData.photo_url,
-            location_id: "hk_hong_kong_001", // Default Hong Kong location
+            location_id: existingMetadata.location_id || "hk_hong_kong_001",
             resource_details: {
               description: formData.resource_details,
               features: resource.details?.features || {},
@@ -886,6 +874,7 @@ function DetailsTab({ resource, onUpdate }) {
               { weekday: "saturday", start_time: "09:00:00", end_time: "18:00:00" },
               { weekday: "sunday", start_time: "09:00:00", end_time: "18:00:00" }
             ]
+            // Note: duration data is preserved from existingMetadata
           }
         };
         
@@ -937,7 +926,7 @@ function DetailsTab({ resource, onUpdate }) {
         resource_name: resource.name || '',
         category: resource.category || '',
         resource_details: resource.details?.resourceDetails || '',
-        email_confirmation: false,
+        email_confirmation: resource.metadata?.email_confirmation || false,
         photo_url: resource.image || null
       });
     };
@@ -1019,166 +1008,22 @@ function DetailsTab({ resource, onUpdate }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Resource details</label>
             <div className="border border-gray-300 rounded-lg">
-              {/* Toolbar */}
-              <div className="flex items-center gap-1 p-2 border-b border-gray-300 bg-gray-50">
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded" 
-                  title="Bold"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('bold');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  <strong className="text-sm">B</strong>
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded italic" 
-                  title="Italic"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('italic');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  <span className="text-sm">i</span>
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded underline" 
-                  title="Underline"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('underline');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  <span className="text-sm">U</span>
-                </button>
-                <div className="w-px h-6 bg-gray-300 mx-1"></div>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Align left"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('justifyLeft');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  ☰
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Align center"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('justifyCenter');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  ≡
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Align right"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('justifyRight');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  ☰
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Bullet list"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('insertUnorderedList');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  •
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Numbered list"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    document.execCommand('insertOrderedList');
-                    editorRef.current?.focus();
-                  }}
-                >
-                  1.
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Link"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleLinkClick}
-                >
-                  🔗
-                </button>
-                <div className="w-px h-6 bg-gray-300 mx-1"></div>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Undo"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleUndo}
-                >
-                  ↶
-                </button>
-                <button 
-                  type="button"
-                  className="p-2 hover:bg-gray-200 rounded text-sm" 
-                  title="Redo"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleRedo}
-                >
-                  ↷
-                </button>
-              </div>
-              {/* Editor content */}
-              <div
-                ref={editorRef}
-                contentEditable
-                dangerouslySetInnerHTML={{ 
-                  __html: formData.resource_details || '<p><br></p>' 
+              {/* Text Editor */}
+              <textarea
+                value={formData.resource_details.replace(/<[^>]*>/g, '')} // Strip HTML tags for display
+                onChange={(e) => {
+                  setFormData({ ...formData, resource_details: e.target.value });
                 }}
-                onInput={(e) => {
-                  const content = e.target.innerHTML;
-                  setFormData({ ...formData, resource_details: content });
-                }}
-                onFocus={(e) => {
-                  if (e.target.innerHTML === '<p><br></p>' || e.target.innerHTML === '') {
-                    e.target.innerHTML = '';
-                  }
-                }}
-                onBlur={(e) => {
-                  if (e.target.innerHTML === '' || e.target.innerHTML === '<br>') {
-                    e.target.innerHTML = '<p><br></p>';
-                  }
-                }}
-                className="w-full p-3 min-h-[100px] focus:outline-none border-0 resize-none"
+                placeholder="Enter resource details..."
+                className="w-full p-3 border-0 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg"
                 style={{ 
-                  minHeight: '100px',
-                  lineHeight: '1.5',
+                  minHeight: '150px',
+                  maxHeight: '400px',
                   direction: 'ltr',
                   textAlign: 'left',
-                  unicodeBidi: 'bidi-override'
+                  lineHeight: '1.5'
                 }}
-                data-placeholder="Enter resource details..."
-                dir="ltr"
-                spellCheck="false"
+                rows={6}
               />
             </div>
           </div>
@@ -1254,54 +1099,6 @@ function DetailsTab({ resource, onUpdate }) {
           </button>
         </div>
         
-        {/* Link Dialog Modal */}
-        {showLinkDialog && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-              <div className="p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Add Link</h3>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    URL
-                  </label>
-                  <input
-                    type="url"
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleLinkSubmit();
-                      } else if (e.key === 'Escape') {
-                        setShowLinkDialog(false);
-                        setLinkUrl('');
-                      }
-                    }}
-                  />
-                </div>
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => {
-                      setShowLinkDialog(false);
-                      setLinkUrl('');
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleLinkSubmit}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                  >
-                    Add Link
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1694,9 +1491,10 @@ function FeaturesTab({ resource, onUpdate }) {
                 <textarea
                   value={newItemDescription}
                   onChange={(e) => setNewItemDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
                   placeholder="Enter descriptive text (e.g., This resource has air conditioning.)"
                   rows={3}
+                  style={{ minHeight: '80px', maxHeight: '200px' }}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Use &lt;strong&gt; tags around important words for bold formatting
@@ -1923,6 +1721,16 @@ function LimitationsTab({ resource, onUpdate }) {
       return duration[field] || (field === 'max_duration' ? 120 : field === 'min_duration' ? 30 : 15);
     };
 
+    // Helper function to detect the best unit for display
+    const detectBestUnit = (minutes) => {
+      // Only show days if it's exactly divisible by 1440 (24 hours)
+      if (minutes >= 1440 && minutes % 1440 === 0) return 'days';
+      // Show hours for 60+ minutes (including 26 hours = 1560 minutes)
+      if (minutes >= 60) return 'hours';
+      // Show minutes for less than 60 minutes
+      return 'minutes';
+    };
+
     const [durationState, setDurationState] = useState(() => {
       const metadata = resource.metadata || {};
       const duration = metadata.duration || {};
@@ -1934,9 +1742,9 @@ function LimitationsTab({ resource, onUpdate }) {
         max_duration_type: duration.max_duration === null ? 'unlimited' : 'limited',
         min_duration_type: duration.min_duration === null ? 'unlimited' : 'limited',
         fixed_interval_type: duration.duration_interval === null ? 'any' : 'fixed',
-        max_duration_unit: 'minutes',
-        min_duration_unit: 'minutes',
-        duration_interval_unit: 'minutes'
+        max_duration_unit: detectBestUnit(duration.max_duration || 120),
+        min_duration_unit: detectBestUnit(duration.min_duration || 30),
+        duration_interval_unit: detectBestUnit(duration.duration_interval || 15)
       };
     });
 
@@ -1945,6 +1753,7 @@ function LimitationsTab({ resource, onUpdate }) {
       const metadata = resource.metadata || {};
       const duration = metadata.duration || {};
       
+      
       setDurationState({
         max_duration: duration.max_duration || 120,
         min_duration: duration.min_duration || 30,
@@ -1952,9 +1761,9 @@ function LimitationsTab({ resource, onUpdate }) {
         max_duration_type: duration.max_duration === null ? 'unlimited' : 'limited',
         min_duration_type: duration.min_duration === null ? 'unlimited' : 'limited',
         fixed_interval_type: duration.duration_interval === null ? 'any' : 'fixed',
-        max_duration_unit: 'minutes',
-        min_duration_unit: 'minutes',
-        duration_interval_unit: 'minutes'
+        max_duration_unit: detectBestUnit(duration.max_duration || 120),
+        min_duration_unit: detectBestUnit(duration.min_duration || 30),
+        duration_interval_unit: detectBestUnit(duration.duration_interval || 15)
       });
     }, [resource.metadata]);
 
@@ -2383,20 +2192,23 @@ function LimitationsTab({ resource, onUpdate }) {
                       <span className="ml-2 text-sm text-gray-700">Reject bookings longer than</span>
                       <div className="ml-2 flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={convertFromMinutes(durationState.max_duration, durationState.max_duration_unit)}
                           onChange={(e) => {
-                            const value = parseInt(e.target.value) || 0;
-                            const minutes = convertToMinutes(value, durationState.max_duration_unit);
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            const numValue = parseInt(value) || 0;
+                            const minutes = convertToMinutes(numValue, durationState.max_duration_unit);
                             setDurationState(prev => ({ ...prev, max_duration: minutes }));
                           }}
                           disabled={durationState.max_duration_type === 'unlimited'}
                           className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                            durationState.max_duration_type === 'unlimited' 
-                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                            durationState.max_duration_type === 'unlimited'
+                              ? 'bg-gray-100 border-gray-200 text-gray-400'
                               : 'border-gray-300'
                           }`}
-                          min="1"
+                          placeholder="0"
                         />
                         <select
                           value={durationState.max_duration_unit}
@@ -2453,20 +2265,23 @@ function LimitationsTab({ resource, onUpdate }) {
                       <span className="ml-2 text-sm text-gray-700">Reject bookings shorter than</span>
                       <div className="ml-2 flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={convertFromMinutes(durationState.min_duration, durationState.min_duration_unit)}
                           onChange={(e) => {
-                            const value = parseInt(e.target.value) || 0;
-                            const minutes = convertToMinutes(value, durationState.min_duration_unit);
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            const numValue = parseInt(value) || 0;
+                            const minutes = convertToMinutes(numValue, durationState.min_duration_unit);
                             setDurationState(prev => ({ ...prev, min_duration: minutes }));
                           }}
                           disabled={durationState.min_duration_type === 'unlimited'}
                           className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                            durationState.min_duration_type === 'unlimited' 
-                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                            durationState.min_duration_type === 'unlimited'
+                              ? 'bg-gray-100 border-gray-200 text-gray-400'
                               : 'border-gray-300'
                           }`}
-                          min="1"
+                          placeholder="0"
                         />
                         <select
                           value={durationState.min_duration_unit}
@@ -2523,20 +2338,23 @@ function LimitationsTab({ resource, onUpdate }) {
                       <span className="ml-2 text-sm text-gray-700">Bookings for this resource must be made in</span>
                       <div className="ml-2 flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={convertFromMinutes(durationState.duration_interval, durationState.duration_interval_unit)}
                           onChange={(e) => {
-                            const value = parseInt(e.target.value) || 0;
-                            const minutes = convertToMinutes(value, durationState.duration_interval_unit);
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            const numValue = parseInt(value) || 0;
+                            const minutes = convertToMinutes(numValue, durationState.duration_interval_unit);
                             setDurationState(prev => ({ ...prev, duration_interval: minutes }));
                           }}
                           disabled={durationState.fixed_interval_type === 'any'}
                           className={`w-16 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                            durationState.fixed_interval_type === 'any' 
-                              ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                            durationState.fixed_interval_type === 'any'
+                              ? 'bg-gray-100 border-gray-200 text-gray-400'
                               : 'border-gray-300'
                           }`}
-                          min="1"
+                          placeholder="0"
                         />
                         <select
                           value={durationState.duration_interval_unit}
@@ -2607,21 +2425,27 @@ function LimitationsTab({ resource, onUpdate }) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={localCapacity}
                       onChange={(e) => {
-                        const newCapacity = parseInt(e.target.value) || 10;
+                        const value = e.target.value.replace(/[^0-9]/g, '');
+                        const newCapacity = value === '' ? 0 : parseInt(value);
                         setLocalCapacity(newCapacity);
                       }}
                       onBlur={() => {
                         // Update the resource when user finishes typing
+                        const finalCapacity = localCapacity || 10; // Default to 10 if empty
                         if (resource.limitations) {
-                          resource.limitations.capacity = localCapacity;
+                          resource.limitations.capacity = finalCapacity;
                         } else {
-                          resource.limitations = { capacity: localCapacity };
+                          resource.limitations = { capacity: finalCapacity };
                         }
+                        setLocalCapacity(finalCapacity); // Update local state to show the final value
                       }}
                       className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="10"
                     />
                     <span className="text-sm text-gray-600">persons</span>
                   </div>
@@ -2869,8 +2693,9 @@ function RatesTab({ resource, onUpdate }) {
                 setSelectedRate(updatedRate);
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
             rows="3"
+            style={{ minHeight: '80px', maxHeight: '200px' }}
           />
         </div>
 
@@ -2880,10 +2705,14 @@ function RatesTab({ resource, onUpdate }) {
           
           <div className="flex items-center gap-4">
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
               value={selectedRate.price}
               onChange={(e) => {
-                const updatedRate = { ...selectedRate, price: parseFloat(e.target.value) || 0 };
+                const value = e.target.value.replace(/[^0-9.,]/g, '');
+                const numValue = parseFloat(value) || 0;
+                const updatedRate = { ...selectedRate, price: numValue };
                 const index = rates.findIndex(rate => rate === selectedRate);
                 if (index !== -1) {
                   updateRate(index, updatedRate);
@@ -2891,8 +2720,7 @@ function RatesTab({ resource, onUpdate }) {
                 }
               }}
               className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              min="0"
-              step="0.01"
+              placeholder="0.00"
             />
             <select 
               value={selectedRate.renewal_type}
