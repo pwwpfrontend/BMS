@@ -16,13 +16,106 @@ export default function Forms() {
   const [editingForm, setEditingForm] = useState(null);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSendForm, setShowSendForm] = useState(false);
+  const [sendingForm, setSendingForm] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [availableFormTypes, setAvailableFormTypes] = useState([]);
+  const [showNewTypeInput, setShowNewTypeInput] = useState(false);
+  const [newTypeValue, setNewTypeValue] = useState('');
   
   const [newForm, setNewForm] = useState({
     name: '',
     description: '',
-    type: 'feedback',
+    type: '',
     fields: []
   });
+
+  const [sendFormData, setSendFormData] = useState({
+    customer: '',
+    customerEmail: '',
+    form: '',
+    formId: '',
+    emailNotification: true
+  });
+
+  // Auth0 configuration for fetching customers
+  const auth0Config = {
+    domain: "bms-optimus.us.auth0.com",
+    clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+    clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
+    audience: "https://bms-optimus.us.auth0.com/api/v2/",
+    userRoleId: "rol_FdjheKGmIFxzp6hR"
+  };
+
+  // Fetch Management API access token
+  const getManagementAccessToken = async () => {
+    try {
+      const response = await fetch(`https://${auth0Config.domain}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: auth0Config.clientId,
+          client_secret: auth0Config.clientSecret,
+          audience: auth0Config.audience,
+          grant_type: "client_credentials",
+          scope: "read:users read:users_app_metadata read:roles",
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get management token');
+      }
+      
+      const data = await response.json();
+      return data.access_token;
+    } catch (error) {
+      console.error("Error getting management token:", error);
+      return null;
+    }
+  };
+
+  // Fetch customers from Auth0
+  const fetchCustomers = async () => {
+    try {
+      setLoadingCustomers(true);
+      const token = await getManagementAccessToken();
+      
+      if (!token) {
+        console.error("Failed to get management token");
+        return;
+      }
+
+      const roleUsersResponse = await fetch(
+        `${auth0Config.audience}roles/${auth0Config.userRoleId}/users`,
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        }
+      );
+
+      if (!roleUsersResponse.ok) {
+        throw new Error('Failed to fetch users with User role');
+      }
+
+      const roleUsers = await roleUsersResponse.json();
+      
+      const customersData = roleUsers.map(user => ({
+        id: user.user_id,
+        name: user.user_metadata?.username || user.name || user.email.split('@')[0],
+        email: user.email
+      }));
+
+      setCustomers(customersData);
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+      setCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
 
   // Load forms on component mount
   useEffect(() => {
@@ -35,18 +128,23 @@ export default function Forms() {
       setError('');
       const formsArray = await formsAPI.getAllForms();
       
-      // Transform to match UI expectations
       const transformedForms = formsArray.map(form => ({
         id: form._id,
         name: form.name,
-        workspace: form.type || 'feedback',
-        status: 'Active',
+        workspace: form.type || '',
+        status: form.active ? 'Active' : 'Inactive',
         description: form.description,
         type: form.type,
+        active: form.active !== undefined ? form.active : true,
         fields: form.fields || []
       }));
       
       setForms(transformedForms);
+      
+      // Extract unique form types from the API response
+      const uniqueTypes = [...new Set(formsArray.map(form => form.type).filter(type => type))];
+      setAvailableFormTypes(uniqueTypes);
+      
     } catch (err) {
       setError('Failed to load forms. Please try again.');
       console.error('Error loading forms:', err);
@@ -111,9 +209,32 @@ export default function Forms() {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleFormTypeChange = (e) => {
+    const value = e.target.value;
+    if (value === '__new__') {
+      setShowNewTypeInput(true);
+      setNewTypeValue('');
+      setNewForm({...newForm, type: ''});
+    } else {
+      setShowNewTypeInput(false);
+      setNewForm({...newForm, type: value});
+    }
+  };
+
+  const handleNewTypeValueChange = (e) => {
+    const value = e.target.value;
+    setNewTypeValue(value);
+    setNewForm({...newForm, type: value});
+  };
+
   const handleAddForm = async () => {
     if (!newForm.name.trim()) {
       setError('Form name is required');
+      return;
+    }
+    
+    if (!newForm.type) {
+      setError('Form type is required');
       return;
     }
     
@@ -121,12 +242,12 @@ export default function Forms() {
       setLoading(true);
       setError('');
       
-      // Prepare data for API according to new structure
       const formData = {
         name: newForm.name,
         description: newForm.description || 'Form for collecting user information',
-        type: newForm.type || 'feedback',
-        fields: newForm.fields || []
+        type: newForm.type,
+        fields: newForm.fields || [],
+        active: true
       };
       
       const response = await formsAPI.createForm(formData);
@@ -135,10 +256,12 @@ export default function Forms() {
       await loadForms();
       
       setShowAddForm(false);
+      setShowNewTypeInput(false);
+      setNewTypeValue('');
       setNewForm({
         name: '',
         description: '',
-        type: 'feedback',
+        type: '',
         fields: []
       });
     } catch (err) {
@@ -173,7 +296,7 @@ export default function Forms() {
       setNewForm({
         name: '',
         description: '',
-        type: 'feedback',
+        type: '',
         fields: []
       });
     } catch (err) {
@@ -189,7 +312,7 @@ export default function Forms() {
     setNewForm({
       name: form.name,
       description: form.description || 'Form for collecting user information',
-      type: form.type || 'feedback',
+      type: form.type || '',
       fields: form.fields || []
     });
     setShowEditForm(true);
@@ -212,11 +335,73 @@ export default function Forms() {
     }
   };
 
+  const handleToggleFormStatus = async (form) => {
+    try {
+      setError('');
+      const newStatus = !form.active;
+      await formsAPI.toggleFormStatus(form.id, newStatus);
+      await loadForms();
+      setActiveDropdown(null);
+    } catch (err) {
+      setError('Failed to toggle form status. Please try again.');
+      console.error('Error toggling form status:', err);
+    }
+  };
+
+  const openSendFormModal = (form) => {
+    setSendingForm(form);
+    setSendFormData({
+      customer: '',
+      customerEmail: '',
+      form: form.name,
+      formId: form.id,
+      emailNotification: true
+    });
+    setShowSendForm(true);
+    setActiveDropdown(null);
+    fetchCustomers();
+  };
+
+  const handleSendForm = async () => {
+    if (!sendFormData.customerEmail || !sendFormData.formId) {
+      setError('Please select a customer and ensure form is selected');
+      return;
+    }
+
+    try {
+      setError('');
+      const selectedCustomer = customers.find(c => c.email === sendFormData.customerEmail);
+      
+      const result = await formsAPI.sendFormToCustomer(
+        sendFormData.formId,
+        sendFormData.customerEmail,
+        selectedCustomer ? selectedCustomer.name : sendFormData.customer
+      );
+      
+      console.log('Form sent successfully:', result);
+      
+      setShowSendForm(false);
+      setSendFormData({
+        customer: '',
+        customerEmail: '',
+        form: '',
+        formId: '',
+        emailNotification: true
+      });
+      setSendingForm(null);
+      
+      alert('Form sent successfully to customer!');
+    } catch (err) {
+      setError('Failed to send form. Please try again.');
+      console.error('Error sending form:', err);
+    }
+  };
+
   const filteredForms = forms.filter(form =>
     form.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  if (loading && forms.length === 0) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
         <Sidebar currentPath="/forms" />
@@ -370,11 +555,15 @@ export default function Forms() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            form.status === 'Active' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
                             <svg className="w-2 h-2 mr-1" fill="currentColor" viewBox="0 0 8 8">
                               <circle cx="4" cy="4" r="3" />
                             </svg>
-                            Active
+                            {form.status}
                           </span>
                         </td>
                         <td className="px-4 py-4">
@@ -397,6 +586,18 @@ export default function Forms() {
                                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                   >
                                     Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleToggleFormStatus(form)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    {form.active ? 'Mark as Inactive' : 'Mark as Active'}
+                                  </button>
+                                  <button
+                                    onClick={() => openSendFormModal(form)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                  >
+                                    Send Form
                                   </button>
                                   <button
                                     onClick={() => handleDeleteForm(form.id)}
@@ -443,7 +644,6 @@ export default function Forms() {
         </main>
       </div>
 
-      {/* Add/Edit Form Modal */}
       {(showAddForm || showEditForm) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl my-8 mx-4">
@@ -496,15 +696,25 @@ export default function Forms() {
                     Form Type
                   </label>
                   <select
-                    value={newForm.type}
-                    onChange={(e) => setNewForm({...newForm, type: e.target.value})}
+                    value={showNewTypeInput ? '__new__' : newForm.type}
+                    onChange={handleFormTypeChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="feedback">Feedback</option>
-                    <option value="survey">Survey</option>
-                    <option value="registration">Registration</option>
-                    <option value="contact">Contact</option>
+                    <option value="">Select a type</option>
+                    {availableFormTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                    {showAddForm && <option value="__new__">+ Add new type</option>}
                   </select>
+                  {showNewTypeInput && (
+                    <input
+                      type="text"
+                      value={newTypeValue}
+                      onChange={handleNewTypeValueChange}
+                      placeholder="Enter new form type"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -515,10 +725,12 @@ export default function Forms() {
                   setShowAddForm(false);
                   setShowEditForm(false);
                   setEditingForm(null);
+                  setShowNewTypeInput(false);
+                  setNewTypeValue('');
                   setNewForm({
                     name: '',
                     description: '',
-                    type: 'feedback',
+                    type: '',
                     fields: []
                   });
                 }}
@@ -531,6 +743,99 @@ export default function Forms() {
                 className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSendForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md my-8 mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Send form</h2>
+            </div>
+
+            <div className="px-6 py-6">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Form request</h3>
+                <p className="text-sm text-gray-600">
+                  Select the form you want to send to the customer. Their responses are available below once they complete the form.
+                </p>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer
+                  </label>
+                  {loadingCustomers ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500">
+                      Loading customers...
+                    </div>
+                  ) : (
+                    <select
+                      value={sendFormData.customerEmail}
+                      onChange={(e) => {
+                        const selectedCustomer = customers.find(c => c.email === e.target.value);
+                        setSendFormData({
+                          ...sendFormData, 
+                          customer: selectedCustomer ? selectedCustomer.name : '',
+                          customerEmail: e.target.value
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select a customer</option>
+                      {customers.map(customer => (
+                        <option key={customer.id} value={customer.email}>
+                          {customer.name} ({customer.email})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Form
+                  </label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600">
+                    {sendFormData.form || 'Current Form'}
+                  </div>
+                </div>
+                
+                <div className="bg-blue-50 p-4 rounded-md">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Email notification</h4>
+                  <p className="text-sm text-blue-800">
+                    Saving this record sends an email notification to the customer, prompting them to complete the form.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSendForm(false);
+                  setSendFormData({
+                    customer: '',
+                    customerEmail: '',
+                    form: '',
+                    formId: '',
+                    emailNotification: true
+                  });
+                  setSendingForm(null);
+                }}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendForm}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Send form
               </button>
             </div>
           </div>

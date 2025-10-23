@@ -1,0 +1,336 @@
+/* Editor Wrapper */
+.editor-wrapper {
+  width: 100%;
+  background: white;
+}
+
+/* Toolbar Styling */
+.editor-toolbar {
+  border: none;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 8px;
+  background: #f9fafb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+/* Toolbar Buttons */
+.rdw-option-wrapper,
+.rdw-dropdown-wrapper {
+  border: 1px solid #d1d5db;
+  background: white;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 8px;
+  min-width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rdw-option-wrapper:hover,
+.rdw-dropdown-wrapper:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.rdw-option-active {
+  background: #dbeafe !important;
+  border-color: #3b82f6 !important;
+}
+
+/* Dropdown Styling */
+.rdw-dropdown-selectedtext {
+  color: #374151;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+
+.rdw-dropdown-carettoopen,
+.rdw-dropdown-carettoclose {
+  border-top-color: #6b7280;
+  margin-left: 8px;
+}
+
+.rdw-dropdown-optionwrapper {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.rdw-dropdownoption-default {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.rdw-dropdownoption-default:hover {
+  background: #f3f4f6;
+}
+
+.rdw-dropdownoption-active {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* Font Size Dropdown */
+.rdw-fontsize-dropdown {
+  min-width: 60px;
+}
+
+/* Color Picker Styling */
+.rdw-colorpicker-wrapper {
+  position: relative;
+}
+
+.rdw-colorpicker-modal {
+  position: absolute;
+  top: 35px;
+  left: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rdw-colorpicker-modal-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rdw-colorpicker-modal-style-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.rdw-colorpicker-modal-style-label-active {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.rdw-colorpicker-modal-options {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  max-width: 220px;
+}
+
+.rdw-colorpicker-option {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.rdw-colorpicker-option:hover {
+  transform: scale(1.1);
+  border-color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.rdw-colorpicker-option-active {
+  border-color: #1e40af !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+/* Link Modal Styling */
+.rdw-link-modal {
+  position: absolute;
+  top: 35px;
+  left: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 16px;
+  z-index: 100;
+  min-width: 300px;
+}
+
+.rdw-link-modal-label {
+  font-size: 13px;
+  color: #374151;
+  font-weight: 500;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.rdw-link-modal-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  transition: all 0.2s;
+}
+
+.rdw-link-modal-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  ring: 2px;
+  ring-color: rgba(59, 130, 246, 0.3);
+}
+
+.rdw-link-modal-buttonsection {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.rdw-link-modal-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #d1d5db;
+  background: white;
+}
+
+.rdw-link-modal-btn:hover {
+  background: #f3f4f6;
+}
+
+.rdw-link-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rdw-link-modal-target-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.rdw-link-modal-target-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* Editor Content Area */
+.editor-content {
+  min-height: 200px;
+  padding: 15px;
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.6;
+  background: white;
+}
+
+.editor-content:focus {
+  outline: none;
+}
+
+/* Editor Content Styles */
+.editor-content .public-DraftStyleDefault-block {
+  margin: 0.5em 0;
+}
+
+.editor-content .public-DraftStyleDefault-ul,
+.editor-content .public-DraftStyleDefault-ol {
+  margin: 0.5em 0;
+  padding-left: 2em;
+}
+
+.editor-content a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.editor-content a:hover {
+  color: #2563eb;
+}
+
+/* Remove Button Styling */
+.editor-remove-button {
+  background: #fee2e2 !important;
+  border-color: #fecaca !important;
+  color: #991b1b !important;
+}
+
+.editor-remove-button:hover {
+  background: #fecaca !important;
+  border-color: #fca5a5 !important;
+}
+
+/* Icon Styling */
+.rdw-option-wrapper img,
+.rdw-dropdown-wrapper img {
+  width: 14px;
+  height: 14px;
+}
+
+/* Scrollbar Styling */
+.rdw-dropdown-optionwrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rdw-dropdown-optionwrapper::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.rdw-dropdown-optionwrapper::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 3px;
+}
+
+.rdw-dropdown-optionwrapper::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .editor-toolbar {
+    padding: 8px 6px;
+  }
+  
+  .rdw-option-wrapper,
+  .rdw-dropdown-wrapper {
+    min-width: 28px;
+    height: 28px;
+    padding: 3px 6px;
+  }
+  
+  .rdw-colorpicker-modal-options {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  
+  .rdw-link-modal {
+    min-width: 250px;
+  }
+}

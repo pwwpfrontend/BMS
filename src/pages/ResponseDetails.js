@@ -11,7 +11,6 @@ export default function ResponseDetails() {
   const [responseDetails, setResponseDetails] = useState(null);
   const [formDetails, setFormDetails] = useState(null);
 
-  // Load response data on component mount
   useEffect(() => {
     if (formId && responseId) {
       loadResponseData();
@@ -23,17 +22,15 @@ export default function ResponseDetails() {
       setLoading(true);
       setError('');
       
-      // Load form details and response data in parallel
       const [formResponse, detailedResponse] = await Promise.all([
         formsAPI.getFormById(formId),
         formsAPI.getResponseDetails(formId, responseId)
       ]);
       
-      // Set form details
       setFormDetails({
         name: formResponse.name,
         description: formResponse.description || '',
-        type: formResponse.type || 'feedback'
+        type: formResponse.type || ''
       });
       
       if (detailedResponse) {
@@ -70,6 +67,21 @@ export default function ResponseDetails() {
     }
   };
 
+  const handleDeleteResponse = async () => {
+    if (!window.confirm('Are you sure you want to delete this response?')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await formsAPI.deleteResponse(formId, responseId);
+      navigate(`/forms/${formId}`, { state: { activeTab: 'requests' } });
+    } catch (err) {
+      setError('Failed to delete response. Please try again.');
+      console.error('Error deleting response:', err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -86,7 +98,7 @@ export default function ResponseDetails() {
     );
   }
 
-  if (error) {
+  if (error && !responseDetails) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
         <Sidebar currentPath="/forms" />
@@ -130,9 +142,22 @@ export default function ResponseDetails() {
               <p className="text-sm text-gray-500">{formDetails?.name}</p>
             </div>
 
+            {error && responseDetails && (
+              <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <div className="text-sm text-red-600">{error}</div>
+                  <button 
+                    onClick={() => setError('')}
+                    className="ml-auto text-red-400 hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
+
             {responseDetails && (
               <div className="space-y-6">
-                {/* Form Request Section */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                   <div className="px-6 py-4 border-b border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-900">Form request</h3>
@@ -176,7 +201,6 @@ export default function ResponseDetails() {
                   </div>
                 </div>
 
-                {/* Answers Section */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                   <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Answers</h3>
@@ -227,7 +251,6 @@ export default function ResponseDetails() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex justify-between">
                   <button
                     onClick={() => navigate(`/forms/${formId}`, { state: { activeTab: 'requests' } })}
@@ -239,7 +262,10 @@ export default function ResponseDetails() {
                     Back to Form
                   </button>
                   <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700">
+                    <button 
+                      onClick={handleDeleteResponse}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                    >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path d="M6 2L10 2M2 4L14 4M12 4L12 13C12 13.5523 11.5523 14 11 14L5 14C4.44772 14 4 13.5523 4 13L4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>

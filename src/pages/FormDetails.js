@@ -20,11 +20,17 @@ export default function FormDetails() {
   const [showSendForm, setShowSendForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [customers, setCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [availableFormTypes, setAvailableFormTypes] = useState([]);
+  const [showNewTypeInput, setShowNewTypeInput] = useState(false);
+  const [newTypeValue, setNewTypeValue] = useState('');
+  const [allForms, setAllForms] = useState([]);
 
   const [formDetails, setFormDetails] = useState({
     name: '',
     description: '',
-    type: 'feedback',
+    type: '',
     active: true
   });
 
@@ -42,13 +48,107 @@ export default function FormDetails() {
 
   const [sendFormData, setSendFormData] = useState({
     customer: '',
+    customerEmail: '',
     form: '',
+    formId: '',
     emailNotification: true
   });
+
+  // Auth0 configuration for fetching customers
+  const auth0Config = {
+    domain: "bms-optimus.us.auth0.com",
+    clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+    clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
+    audience: "https://bms-optimus.us.auth0.com/api/v2/",
+    userRoleId: "rol_FdjheKGmIFxzp6hR"
+  };
+
+  // Fetch Management API access token
+  const getManagementAccessToken = async () => {
+    try {
+      const response = await fetch(`https://${auth0Config.domain}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: auth0Config.clientId,
+          client_secret: auth0Config.clientSecret,
+          audience: auth0Config.audience,
+          grant_type: "client_credentials",
+          scope: "read:users read:users_app_metadata read:roles",
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get management token');
+      }
+      
+      const data = await response.json();
+      return data.access_token;
+    } catch (error) {
+      console.error("Error getting management token:", error);
+      return null;
+    }
+  };
+
+  // Fetch customers from Auth0
+  const fetchCustomers = async () => {
+    try {
+      setLoadingCustomers(true);
+      const token = await getManagementAccessToken();
+      
+      if (!token) {
+        console.error("Failed to get management token");
+        return;
+      }
+
+      const roleUsersResponse = await fetch(
+        `${auth0Config.audience}roles/${auth0Config.userRoleId}/users`,
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        }
+      );
+
+      if (!roleUsersResponse.ok) {
+        throw new Error('Failed to fetch users with User role');
+      }
+
+      const roleUsers = await roleUsersResponse.json();
+      
+      const customersData = roleUsers.map(user => ({
+        id: user.user_id,
+        name: user.user_metadata?.username || user.name || user.email.split('@')[0],
+        email: user.email
+      }));
+
+      setCustomers(customersData);
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+      setCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  // Fetch available form types from API
+  const fetchAvailableFormTypes = async () => {
+    try {
+      const allForms = await formsAPI.getAllForms();
+      setAllForms(allForms);
+      const uniqueTypes = [...new Set(allForms.map(form => form.type).filter(type => type))];
+      setAvailableFormTypes(uniqueTypes);
+    } catch (error) {
+      console.error("Error fetching form types:", error);
+      setAvailableFormTypes([]);
+    }
+  };
 
   useEffect(() => {
     if (formId) {
       loadFormData();
+      fetchAvailableFormTypes();
     }
   }, [formId]);
 
@@ -81,11 +181,10 @@ export default function FormDetails() {
       setFormDetails({
         name: formResponse.name,
         description: formResponse.description || '',
-        type: formResponse.type || 'feedback',
+        type: formResponse.type || '',
         active: formResponse.active !== undefined ? formResponse.active : true
       });
       
-      // Transform fields from the form response
       const transformedQuestions = formResponse.fields?.map(field => ({
         id: field._id,
         question: field.question,
@@ -172,12 +271,20 @@ export default function FormDetails() {
       ...question,
       options: question.options || []
     });
+    setNewQuestion({
+      question: question.question,
+      description: question.description,
+      type: question.type,
+      required: question.required,
+      options: question.options || [],
+      active: question.active
+    });
     setShowEditQuestion(true);
     setActiveDropdown(null);
   };
 
   const handleUpdateQuestion = async () => {
-    if (!editingQuestion.question.trim()) {
+    if (!newQuestion.question.trim()) {
       setError('Question text is required');
       return;
     }
@@ -186,12 +293,12 @@ export default function FormDetails() {
       setError('');
       
       const fieldData = {
-        question: editingQuestion.question,
-        description: editingQuestion.description || '',
-        type: editingQuestion.type,
-        required: editingQuestion.required,
-        options: editingQuestion.type === 'options' ? editingQuestion.options.filter(option => option.trim() !== '') : [],
-        active: editingQuestion.active !== undefined ? editingQuestion.active : true
+        question: newQuestion.question,
+        description: newQuestion.description || '',
+        type: newQuestion.type,
+        required: newQuestion.required,
+        options: newQuestion.type === 'options' ? newQuestion.options.filter(option => option.trim() !== '') : [],
+        active: newQuestion.active !== undefined ? newQuestion.active : true
       };
       
       await formsAPI.updateFormField(formId, editingQuestion.id, fieldData);
@@ -199,6 +306,14 @@ export default function FormDetails() {
       
       setShowEditQuestion(false);
       setEditingQuestion(null);
+      setNewQuestion({
+        question: '',
+        description: '',
+        type: 'text',
+        required: false,
+        options: [],
+        active: true
+      });
     } catch (err) {
       setError('Failed to update question. Please try again.');
       console.error('Error updating question:', err);
@@ -236,6 +351,24 @@ export default function FormDetails() {
     }
   };
 
+  const handleFormTypeChange = (e) => {
+    const value = e.target.value;
+    if (value === '__new__') {
+      setShowNewTypeInput(true);
+      setNewTypeValue('');
+      setFormDetails({...formDetails, type: ''});
+    } else {
+      setShowNewTypeInput(false);
+      setFormDetails({...formDetails, type: value});
+    }
+  };
+
+  const handleNewTypeValueChange = (e) => {
+    const value = e.target.value;
+    setNewTypeValue(value);
+    setFormDetails({...formDetails, type: value});
+  };
+
   const handleUpdateFormDetails = async () => {
     try {
       setError('');
@@ -248,9 +381,36 @@ export default function FormDetails() {
       };
       
       await formsAPI.updateForm(formId, formData);
+      
+      // Update available form types if new type was added
+      if (formDetails.type && !availableFormTypes.includes(formDetails.type)) {
+        setAvailableFormTypes([...availableFormTypes, formDetails.type]);
+      }
+      
+      setShowNewTypeInput(false);
+      setNewTypeValue('');
     } catch (err) {
       setError('Failed to update form details. Please try again.');
       console.error('Error updating form details:', err);
+    }
+  };
+
+  const handleToggleFormStatus = async (newStatus) => {
+    try {
+      setError('');
+      
+      const formData = {
+        name: formDetails.name,
+        description: formDetails.description,
+        type: formDetails.type,
+        active: newStatus
+      };
+      
+      await formsAPI.updateForm(formId, formData);
+      setFormDetails({...formDetails, active: newStatus});
+    } catch (err) {
+      setError('Failed to toggle form status. Please try again.');
+      console.error('Error toggling form status:', err);
     }
   };
 
@@ -277,18 +437,89 @@ export default function FormDetails() {
     setSelectAllResponses(newSelected.length === responses.length);
   };
 
-  const handleSendForm = () => {
-    const formDataToSend = {
-      ...sendFormData,
-      form: formDetails.name
-    };
-    console.log('Sending form:', formDataToSend);
-    setShowSendForm(false);
+  const handleBulkDeleteResponses = async () => {
+    if (selectedResponses.length === 0) return;
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedResponses.length} response(s)?`)) {
+      return;
+    }
+
+    try {
+      setError('');
+      await formsAPI.bulkDeleteResponses(selectedResponses);
+      await loadFormData();
+      setSelectedResponses([]);
+      setSelectAllResponses(false);
+    } catch (err) {
+      setError('Failed to delete responses. Please try again.');
+      console.error('Error deleting responses:', err);
+    }
+  };
+
+  const handleExportResponses = () => {
+    const csvContent = [
+      ['Form', 'Customer', 'Status', 'Sent On'],
+      ...responses.map(response => [
+        response.form,
+        response.customer,
+        response.status,
+        response.sentOn
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${formDetails.name}_responses.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const openSendFormModal = () => {
     setSendFormData({
       customer: '',
-      form: '',
+      customerEmail: '',
+      form: formDetails.name,
+      formId: formId,
       emailNotification: true
     });
+    setShowSendForm(true);
+    fetchCustomers();
+  };
+
+  const handleSendForm = async () => {
+    if (!sendFormData.customerEmail || !sendFormData.formId) {
+      setError('Please select a customer and ensure form is selected');
+      return;
+    }
+
+    try {
+      setError('');
+      const selectedCustomer = customers.find(c => c.email === sendFormData.customerEmail);
+      
+      const result = await formsAPI.sendFormToCustomer(
+        sendFormData.formId,
+        sendFormData.customerEmail,
+        selectedCustomer ? selectedCustomer.name : sendFormData.customer
+      );
+      
+      console.log('Form sent successfully:', result);
+      
+      setShowSendForm(false);
+      setSendFormData({
+        customer: '',
+        customerEmail: '',
+        form: '',
+        formId: '',
+        emailNotification: true
+      });
+      
+      alert('Form sent successfully to customer!');
+    } catch (err) {
+      setError('Failed to send form. Please try again.');
+      console.error('Error sending form:', err);
+    }
   };
 
   const filteredQuestions = questions.filter(question =>
@@ -409,19 +640,50 @@ export default function FormDetails() {
                             Form Type
                           </label>
                           <select
-                            value={formDetails.type}
-                            onChange={(e) => {
-                              setFormDetails({...formDetails, type: e.target.value});
-                              handleUpdateFormDetails();
+                            value={showNewTypeInput ? '__new__' : formDetails.type}
+                            onChange={handleFormTypeChange}
+                            onBlur={() => {
+                              if (!showNewTypeInput) {
+                                handleUpdateFormDetails();
+                              }
                             }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
-                            <option value="feedback">Feedback</option>
-                            <option value="survey">Survey</option>
-                            <option value="registration">Registration</option>
-                            <option value="contact">Contact</option>
-                            <option value="testing">Testing</option>
+                            <option value="">Select a type</option>
+                            {availableFormTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                            <option value="__new__">+ Add new type</option>
                           </select>
+                          {showNewTypeInput && (
+                            <div className="mt-2">
+                              <input
+                                type="text"
+                                value={newTypeValue}
+                                onChange={handleNewTypeValueChange}
+                                placeholder="Enter new form type"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={handleUpdateFormDetails}
+                                  className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                >
+                                  Save Type
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowNewTypeInput(false);
+                                    setNewTypeValue('');
+                                    setFormDetails({...formDetails, type: ''});
+                                  }}
+                                  className="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-3">
@@ -429,10 +691,7 @@ export default function FormDetails() {
                             <input
                               type="checkbox"
                               checked={formDetails.active}
-                              onChange={(e) => {
-                                setFormDetails({...formDetails, active: e.target.checked});
-                                handleUpdateFormDetails();
-                              }}
+                              onChange={(e) => handleToggleFormStatus(e.target.checked)}
                               className="sr-only"
                             />
                             <div className={`w-11 h-6 rounded-full transition-colors ${
@@ -587,16 +846,30 @@ export default function FormDetails() {
                         </button>
                       </div>
                       <div className="flex items-center gap-3">
-                        <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50">
+                        <button 
+                          onClick={handleExportResponses}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                             <path d="M8 2v8m0 0L5.5 7.5M8 10l2.5-2.5M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                           </svg>
-                        </button>
-                        <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50">
-                          Bulk actions
+                          Export
                         </button>
                         <button 
-                          onClick={() => setShowSendForm(true)}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                          Bulk actions
+                        </button>
+                        {selectedResponses.length > 0 && (
+                          <button
+                            onClick={handleBulkDeleteResponses}
+                            className="px-3 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                          >
+                            Delete Selected ({selectedResponses.length})
+                          </button>
+                        )}
+                        <button 
+                          onClick={openSendFormModal}
                           className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -796,7 +1069,7 @@ export default function FormDetails() {
                       { value: 'options', label: 'Options menu' },
                       { value: 'date', label: 'Date' },
                       { value: 'file', label: 'File' },
-                      { value: 'checkbox', label: 'Yes/No' }
+                      { value: 'boolean', label: 'Yes/No' }
                     ].map((typeOption) => (
                       <label key={typeOption.value} className="flex items-center">
                         <input
@@ -868,7 +1141,17 @@ export default function FormDetails() {
 
             <div className="px-6 py-4 border-t border-gray-200 flex justify-between flex-shrink-0">
               <button
-                onClick={() => setShowAddQuestion(false)}
+                onClick={() => {
+                  setShowAddQuestion(false);
+                  setNewQuestion({
+                    question: '',
+                    description: '',
+                    type: 'text',
+                    required: false,
+                    options: [],
+                    active: true
+                  });
+                }}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -903,6 +1186,14 @@ export default function FormDetails() {
                   onClick={() => {
                     setShowEditQuestion(false);
                     setEditingQuestion(null);
+                    setNewQuestion({
+                      question: '',
+                      description: '',
+                      type: 'text',
+                      required: false,
+                      options: [],
+                      active: true
+                    });
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -925,8 +1216,8 @@ export default function FormDetails() {
                   </label>
                   <input
                     type="text"
-                    value={editingQuestion.question}
-                    onChange={(e) => setEditingQuestion({...editingQuestion, question: e.target.value})}
+                    value={newQuestion.question}
+                    onChange={(e) => setNewQuestion({...newQuestion, question: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter your question"
                   />
@@ -937,8 +1228,8 @@ export default function FormDetails() {
                     Description
                   </label>
                   <textarea
-                    value={editingQuestion.description || ''}
-                    onChange={(e) => setEditingQuestion({...editingQuestion, description: e.target.value})}
+                    value={newQuestion.description}
+                    onChange={(e) => setNewQuestion({...newQuestion, description: e.target.value})}
                     className="w-full px-3 py-2 min-h-[80px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter question description"
                   />
@@ -948,15 +1239,15 @@ export default function FormDetails() {
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={editingQuestion.required}
-                      onChange={(e) => setEditingQuestion({...editingQuestion, required: e.target.checked})}
+                      checked={newQuestion.required}
+                      onChange={(e) => setNewQuestion({...newQuestion, required: e.target.checked})}
                       className="sr-only"
                     />
                     <div className={`w-11 h-6 rounded-full transition-colors ${
-                      editingQuestion.required ? 'bg-blue-600' : 'bg-gray-200'
+                      newQuestion.required ? 'bg-blue-600' : 'bg-gray-200'
                     }`}>
                       <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
-                        editingQuestion.required ? 'translate-x-5' : 'translate-x-0.5'
+                        newQuestion.required ? 'translate-x-5' : 'translate-x-0.5'
                       } mt-0.5`}>
                       </div>
                     </div>
@@ -975,19 +1266,15 @@ export default function FormDetails() {
                       { value: 'options', label: 'Options menu' },
                       { value: 'date', label: 'Date' },
                       { value: 'file', label: 'File' },
-                      { value: 'checkbox', label: 'Yes/No' }
+                      { value: 'boolean', label: 'Yes/No' }
                     ].map((typeOption) => (
                       <label key={typeOption.value} className="flex items-center">
                         <input
                           type="radio"
-                          name="editQuestionType"
+                          name="questionTypeEdit"
                           value={typeOption.value}
-                          checked={editingQuestion.type === typeOption.value}
-                          onChange={(e) => setEditingQuestion({
-                            ...editingQuestion, 
-                            type: e.target.value, 
-                            options: e.target.value === 'options' ? (editingQuestion.options?.length > 0 ? editingQuestion.options : ['']) : []
-                          })}
+                          checked={newQuestion.type === typeOption.value}
+                          onChange={(e) => setNewQuestion({...newQuestion, type: e.target.value, options: e.target.value === 'options' ? (newQuestion.options.length > 0 ? newQuestion.options : ['']) : []})}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
                         <span className="ml-3 text-sm text-gray-700">{typeOption.label}</span>
@@ -996,31 +1283,31 @@ export default function FormDetails() {
                   </div>
                 </div>
 
-                {editingQuestion.type === 'options' && (
+                {newQuestion.type === 'options' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Options
                     </label>
                     <div className="space-y-2">
-                      {editingQuestion.options.map((option, index) => (
+                      {newQuestion.options.map((option, index) => (
                         <div key={index} className="flex items-center gap-2">
                           <input
                             type="text"
                             value={option}
                             onChange={(e) => {
-                              const newOptions = [...editingQuestion.options];
+                              const newOptions = [...newQuestion.options];
                               newOptions[index] = e.target.value;
-                              setEditingQuestion({...editingQuestion, options: newOptions});
+                              setNewQuestion({...newQuestion, options: newOptions});
                             }}
                             placeholder={`Option ${index + 1}`}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
-                          {editingQuestion.options.length > 1 && (
+                          {newQuestion.options.length > 1 && (
                             <button
                               type="button"
                               onClick={() => {
-                                const newOptions = editingQuestion.options.filter((_, i) => i !== index);
-                                setEditingQuestion({...editingQuestion, options: newOptions});
+                                const newOptions = newQuestion.options.filter((_, i) => i !== index);
+                                setNewQuestion({...newQuestion, options: newOptions});
                               }}
                               className="text-red-600 hover:text-red-800 p-1"
                             >
@@ -1034,7 +1321,7 @@ export default function FormDetails() {
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingQuestion({...editingQuestion, options: [...editingQuestion.options, '']});
+                          setNewQuestion({...newQuestion, options: [...newQuestion.options, '']});
                         }}
                         className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50"
                       >
@@ -1054,6 +1341,14 @@ export default function FormDetails() {
                 onClick={() => {
                   setShowEditQuestion(false);
                   setEditingQuestion(null);
+                  setNewQuestion({
+                    question: '',
+                    description: '',
+                    type: 'text',
+                    required: false,
+                    options: [],
+                    active: true
+                  });
                 }}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
               >
@@ -1062,6 +1357,7 @@ export default function FormDetails() {
                 </svg>
                 Close
               </button>
+              
               <button
                 onClick={handleUpdateQuestion}
                 className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
@@ -1070,74 +1366,8 @@ export default function FormDetails() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Send Form Modal */}
-      {showSendForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md my-8 mx-4">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Send form</h2>
-            </div>
-
-            <div className="px-6 py-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Form request</h3>
-                <p className="text-sm text-gray-600">
-                  Select the form you want to send to the customer. Their responses are available below once they complete the form.
-                </p>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Customer
-                  </label>
-                  <input
-                    type="text"
-                    value={sendFormData.customer}
-                    onChange={(e) => setSendFormData({...sendFormData, customer: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Select or enter customer name"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Form
-                  </label>
-                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600">
-                    {formDetails.name || 'Current Form'}
-                  </div>
-                </div>
-                
-                <div className="bg-blue-50 p-4 rounded-md">
-                  <h4 className="text-sm font-medium text-blue-900 mb-2">Email notification</h4>
-                  <p className="text-sm text-blue-800">
-                    Saving this record sends an email notification to the customer, prompting them to complete the form.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowSendForm(false)}
-                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSendForm}
-                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                Send form
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+         </div>
+          )}
     </div>
   );
 }

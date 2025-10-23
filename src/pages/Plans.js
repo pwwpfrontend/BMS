@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { Editor } from 'react-draft-wysiwyg';
+import { EditorState, ContentState, convertToRaw, convertFromHTML } from 'draft-js';
+import draftToHtml from 'draftjs-to-html';
+import 'react-draft-wysiwyg/dist/react-draft-wysiwyg.css';
+import './Plans.css';
 
-// Sidebar component - import from your actual component
 import Sidebar from '../components/Sidebar';
 
 const BASE_URL = 'https://njs-01.optimuslab.space';
@@ -17,9 +21,8 @@ export default function Plans() {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(null);
-  const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
-  const editorRef = useRef(null);
+  const [editorState, setEditorState] = useState(EditorState.createEmpty());
+  const [currentFontSize, setCurrentFontSize] = useState(14);
   
   const [newPlan, setNewPlan] = useState({
     name: '',
@@ -38,7 +41,6 @@ export default function Plans() {
     hour12: false
   });
 
-  // Fetch all plans
   const fetchPlans = async () => {
     try {
       setLoading(true);
@@ -66,14 +68,12 @@ export default function Plans() {
     }
   };
 
-  // Fetch all forms
   const fetchForms = async () => {
     try {
       const response = await fetch(`${BASE_URL}/bhms/forms`);
       const data = await response.json();
       setForms(data);
       
-      // Extract unique form types
       const uniqueTypes = [...new Set(data.map(form => form.type).filter(Boolean))];
       setFormTypes(uniqueTypes);
     } catch (error) {
@@ -237,18 +237,30 @@ export default function Plans() {
       discountPercent: '20',
       description: ''
     });
+    setEditorState(EditorState.createEmpty());
+    setCurrentFontSize(14);
   };
 
   const openEditModal = (plan) => {
     setEditingPlan(plan);
     
-    // Calculate period from durationMonths
     let every = plan.durationMonths;
     let period = 'months';
     
     if (plan.durationMonths >= 12 && plan.durationMonths % 12 === 0) {
       every = plan.durationMonths / 12;
       period = 'years';
+    }
+
+    if (plan.description) {
+      const blocksFromHTML = convertFromHTML(plan.description);
+      const contentState = ContentState.createFromBlockArray(
+        blocksFromHTML.contentBlocks,
+        blocksFromHTML.entityMap
+      );
+      setEditorState(EditorState.createWithContent(contentState));
+    } else {
+      setEditorState(EditorState.createEmpty());
     }
 
     setNewPlan({
@@ -301,58 +313,29 @@ export default function Plans() {
     plan.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
- const applyFormat = (command, value = null) => {
-  document.execCommand(command, false, value);
-  const content = editorRef.current.innerHTML;
-  editorRef.current.description = content;
-  editorRef.current?.focus();
-};
+  const onEditorStateChange = (newEditorState) => {
+    setEditorState(newEditorState);
+    const html = draftToHtml(convertToRaw(newEditorState.getCurrentContent()));
+    setNewPlan(prev => ({ ...prev, description: html }));
+  };
 
-  const insertLink = () => {
-    const url = prompt('Enter the URL:');
-    if (url) {
-      applyFormat('createLink', url);
+  const handleFontSizeIncrease = () => {
+    if (currentFontSize < 48) {
+      setCurrentFontSize(prev => prev + 2);
     }
   };
 
-  const showColorPickerModal = (type, event) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setColorPickerPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.bottom + 10
-    });
-    setShowColorPicker(type);
-  };
-
-  const applyColor = (color) => {
-    if (showColorPicker === 'text') {
-      applyFormat('foreColor', color);
-    } else if (showColorPicker === 'background') {
-      applyFormat('hiliteColor', color);
+  const handleFontSizeDecrease = () => {
+    if (currentFontSize > 8) {
+      setCurrentFontSize(prev => prev - 2);
     }
-    setShowColorPicker(null);
   };
 
-  const handleEditorInput = (e) => {
-  const content = e.currentTarget.innerHTML;
-  // Don't update state on every keystroke to prevent cursor jumping
-  // State will be read directly from the contentEditable element when saving
-  editorRef.current.description = content;
-};
-
-  // Check if form is valid for saving
   const isFormValid = () => {
     return newPlan.name.trim() !== '' && 
            newPlan.price !== '' && 
            newPlan.formType !== '';
   };
-
-  const colorPresets = [
-    '#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', 
-    '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000',
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
-    '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#52B788'
-  ];
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -425,7 +408,10 @@ export default function Plans() {
                     Export
                   </button>
                   <button
-                    onClick={() => setShowAddPlan(true)}
+                    onClick={() => {
+                      setShowAddPlan(true);
+                      setEditorState(EditorState.createEmpty());
+                    }}
                     className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
                   >
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -619,48 +605,11 @@ export default function Plans() {
         </main>
       </div>
 
-      {/* Color Picker Modal */}
-      {showColorPicker && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[60]" onClick={() => setShowColorPicker(null)}>
-          <div className="bg-white rounded-lg shadow-2xl p-6 w-80" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {showColorPicker === 'text' ? 'Text Color' : 'Background Color'}
-              </h3>
-              <button onClick={() => setShowColorPicker(null)} className="text-gray-400 hover:text-gray-600">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M15 5L5 15M5 5l10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </button>
-            </div>
-            <div className="grid grid-cols-5 gap-3">
-              {colorPresets.map(color => (
-                <button
-                  key={color}
-                  onClick={() => applyColor(color)}
-                  className="w-12 h-12 rounded-lg border-2 border-gray-300 hover:border-blue-500 transition-colors"
-                  style={{ backgroundColor: color }}
-                  title={color}
-                />
-              ))}
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Custom Color</label>
-              <input
-                type="color"
-                className="w-full h-10 rounded cursor-pointer"
-                onChange={(e) => applyColor(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Add/Edit Plan Modal */}
       {(showAddPlan || showEditPlan) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-8">
-            <div className="sticky top-0 bg-white px-7 py-5 border-b border-gray-200 flex justify-between items-center rounded-t-xl">
+            <div className="sticky top-0 bg-white px-7 py-5 border-b border-gray-200 flex justify-between items-center rounded-t-xl z-10">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">
                   {showEditPlan ? newPlan.name || 'Edit Plan' : 'Create New Plan'}
@@ -768,30 +717,30 @@ export default function Plans() {
                   </p>
                   
                   <div className="space-y-3">
-                    <label className="flex items-start cursor-pointer">
+                    <label className="flex items-center cursor-pointer">
                       <input
                         type="radio"
                         name="discount"
                         value="no"
                         checked={newPlan.discount === 'no'}
                         onChange={(e) => setNewPlan({...newPlan, discount: e.target.value})}
-                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mt-0.5"
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <span className="ml-3 text-sm text-gray-700">
                         Members in this plan do not get a discount in their bookings
                       </span>
                     </label>
                     
-                    <label className="flex items-start cursor-pointer">
+                    <label className="flex items-center cursor-pointer">
                       <input
                         type="radio"
                         name="discount"
                         value="yes"
                         checked={newPlan.discount === 'yes'}
                         onChange={(e) => setNewPlan({...newPlan, discount: e.target.value})}
-                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mt-0.5"
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
-                      <span className="ml-3 text-sm text-gray-700 flex items-center gap-2 flex-wrap">
+                      <span className="ml-3 text-sm text-gray-700 flex items-center gap-2">
                         Members in this plan get
                         <div className="relative inline-block">
                           <input
@@ -821,170 +770,61 @@ export default function Plans() {
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     Plan description
                   </label>
-                  <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                    <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('bold')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Bold"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M5 3h5a3 3 0 013 3 3 3 0 01-3 3H5V3zM5 9h6a3 3 0 013 3 3 3 0 01-3 3H5V9z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('italic')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700 italic font-serif"
-                        title="Italic"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M8 3h6M4 15h6M11 3l-4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('underline')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Underline"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M5 3v6a4 4 0 008 0V3M3 15h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('strikeThrough')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Strikethrough"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M3 9h12M6 6c0-1.5 1.5-3 3-3s3 1.5 3 3M6 12c0 1.5 1.5 3 3 3s3-1.5 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <div className="w-px h-5 bg-gray-300 mx-1"></div>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('insertOrderedList')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Numbered List"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M7 4h8M7 9h8M7 14h8M3 4h1M3 9h1M3 14h1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('insertUnorderedList')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Bullet List"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <circle cx="3" cy="4.5" r="1" fill="currentColor"/>
-                          <circle cx="3" cy="9" r="1" fill="currentColor"/>
-                          <circle cx="3" cy="13.5" r="1" fill="currentColor"/>
-                          <path d="M7 4.5h8M7 9h8M7 13.5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <div className="w-px h-5 bg-gray-300 mx-1"></div>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('justifyLeft')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Align Left"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M3 4h12M3 9h8M3 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('justifyCenter')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Align Center"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M3 4h12M5 9h8M3 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('justifyRight')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Align Right"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M3 4h12M7 9h8M3 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <div className="w-px h-5 bg-gray-300 mx-1"></div>
-                      <button
-                        type="button"
-                        onClick={(e) => showColorPickerModal('text', e)}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Text Color"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M4 14l5-12 5 12M6 10h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          <rect x="3" y="15" width="12" height="2" fill="currentColor"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => showColorPickerModal('background', e)}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Background Color"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-                          <path d="M5 8l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={insertLink}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Insert Link"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M8 10a3 3 0 003 3h3a3 3 0 100-6h-3M10 8a3 3 0 00-3-3H4a3 3 0 100 6h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyFormat('removeFormat')}
-                        className="p-1.5 hover:bg-gray-200 rounded text-gray-700"
-                        title="Clear Formatting"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <path d="M14 4L4 14M4 4l10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                    </div>
-                   <div
-  ref={editorRef}
-  contentEditable
-  suppressContentEditableWarning
-  onBlur={(e) => {
-    const content = e.currentTarget.innerHTML;
-    setNewPlan(prev => ({...prev, description: content}));
-  }}
-  defaultValue={newPlan.description}
-  className="min-h-[150px] max-h-[300px] overflow-y-auto px-4 py-3 focus:outline-none text-sm text-gray-900"
-  style={{ 
-    wordBreak: 'break-word',
-    overflowWrap: 'break-word',
-    direction: 'ltr'
-  }}
-  dangerouslySetInnerHTML={{ __html: newPlan.description }}
-/>
+                  <div className="border border-gray-300 rounded-lg overflow-hidden">
+                    <Editor
+                      editorState={editorState}
+                      onEditorStateChange={onEditorStateChange}
+                      wrapperClassName="demo-wrapper"
+                      editorClassName="demo-editor"
+                      editorStyle={{ fontSize: `${currentFontSize}px` }}
+                      toolbar={{
+                        options: ['inline', 'list', 'textAlign'],
+                        inline: {
+                          options: ['bold', 'italic', 'underline', 'strikethrough']
+                        },
+                        list: {
+                          options: ['unordered', 'ordered']
+                        },
+                        textAlign: {
+                          options: ['left', 'center', 'right', 'justify']
+                        }
+                      }}
+                      toolbarCustomButtons={[
+                        <button
+                          key="font-decrease"
+                          onClick={handleFontSizeDecrease}
+                          disabled={currentFontSize <= 8}
+                          className="rdw-option-wrapper"
+                          title="Decrease Font Size"
+                          style={{ border: 'none', padding: '7px', minWidth: '35px' }}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                            <text x="2" y="14" fontSize="12" fontWeight="bold" fill="currentColor">A-</text>
+                          </svg>
+                        </button>,
+                        <div key="font-size-display" className="rdw-option-wrapper" style={{ border: 'none', padding: '7px', minWidth: '35px', cursor: 'default' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '500' }}>{currentFontSize}px</span>
+                        </div>,
+                        <button
+                          key="font-increase"
+                          onClick={handleFontSizeIncrease}
+                          disabled={currentFontSize >= 48}
+                          className="rdw-option-wrapper"
+                          title="Increase Font Size"
+                          style={{ border: 'none', padding: '7px', minWidth: '35px' }}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                            <text x="2" y="14" fontSize="14" fontWeight="bold" fill="currentColor">A+</text>
+                          </svg>
+                        </button>
+                      ]}
+                    />
                   </div>
-                  {newPlan.description && (
+                  {newPlan.description && newPlan.description !== '<p></p>\n' && (
                     <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
                       <p className="text-xs font-semibold text-gray-700 mb-1">Preview:</p>
                       <div 
-                        className="text-sm text-gray-700"
+                        className="prose prose-sm max-w-none text-sm text-gray-700"
                         dangerouslySetInnerHTML={{ __html: newPlan.description }}
                       />
                     </div>

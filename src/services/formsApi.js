@@ -74,6 +74,14 @@ class FormsAPI {
     });
   }
 
+  // Toggle form active status
+  async toggleFormStatus(formId, isActive) {
+    return this.apiRequest(`/forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ active: isActive }),
+    });
+  }
+
   // FIELD (QUESTIONS) MANAGEMENT ENDPOINTS
 
   // Get all fields for a form
@@ -130,6 +138,13 @@ class FormsAPI {
     });
   }
 
+  // Delete a single response
+  async deleteResponse(formId, responseId) {
+    return this.apiRequest(`/form-responses/${responseId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // UTILITY METHODS
 
   // Bulk delete forms
@@ -142,6 +157,38 @@ class FormsAPI {
   async bulkDeleteFields(formId, fieldIds) {
     const deletePromises = fieldIds.map(fieldId => this.deleteFormField(formId, fieldId));
     return Promise.all(deletePromises);
+  }
+
+  // Bulk delete responses
+  async bulkDeleteResponses(responseIds) {
+    const deletePromises = responseIds.map(responseId => this.deleteResponse(null, responseId));
+    return Promise.all(deletePromises);
+  }
+
+  // Send form to customer
+  async sendFormToCustomer(formId, customerEmail, customerName) {
+    // Get the complete form data including all fields
+    const formData = await this.getFormById(formId);
+    
+    // Prepare the request body with complete form information
+    const requestBody = {
+      formId: formData._id,
+      formName: formData.name,
+      formDescription: formData.description,
+      formType: formData.type,
+      customerEmail: customerEmail,
+      customerName: customerName,
+      fields: formData.fields,
+      sentAt: new Date().toISOString()
+    };
+
+    console.log('Sending form to customer:', requestBody);
+
+    // TODO: Replace with actual API endpoint when available
+    // For now, this logs the data that would be sent
+    // In production, this would be: return this.apiRequest('/send-form', { method: 'POST', body: JSON.stringify(requestBody) });
+    
+    return requestBody;
   }
 }
 
