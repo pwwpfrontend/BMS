@@ -283,7 +283,7 @@ export default function BookingDetails() {
     }
 
     try {
-      const response = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+      const response = await fetch('http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

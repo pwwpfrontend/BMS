@@ -24,10 +24,10 @@ export default function Dashboard() {
       try {
         setLoading(true);
 
-        // Fetch all bookings from the new API
+        // Fetch all bookings from the Booking System API
         const fetchBookings = async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/booking_hapio/all-bookings`, {
+            const response = await fetch(`${API_BASE_URL}/booking_system/viewAllBookings`, {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
@@ -41,8 +41,8 @@ export default function Dashboard() {
             const result = await response.json();
             console.log("📋 All bookings fetched:", result);
             
-            // The response has a "data" field containing the bookings array
-            return result.data || [];
+            // Endpoint returns array or {data: []}
+            return Array.isArray(result) ? result : (result.data || []);
           } catch (error) {
             console.error("Error fetching bookings:", error);
             return [];
@@ -65,7 +65,7 @@ export default function Dashboard() {
 
             const resourcesData = await response.json();
             console.log("📦 Resources fetched:", resourcesData);
-            return Array.isArray(resourcesData) ? resourcesData : [];
+            return Array.isArray(resourcesData) ? resourcesData : (resourcesData.data || []);
           } catch (error) {
             console.error("Error fetching resources:", error);
             return [];
@@ -98,7 +98,7 @@ export default function Dashboard() {
         // Fetch cancelled bookings
         const fetchCancelledBookings = async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/bms/cancelled-meeting`, {
+            const response = await fetch(`http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting`, {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
@@ -151,27 +151,27 @@ export default function Dashboard() {
           }
         };
 
-        // Transform booking from new API format
+        // Create a lookup for resources to map names when missing in booking
+        const resourceMap = new Map((resourcesData || []).map(r => [String(r.id), r.name]));
+
+        // Transform booking from API format
         const transformBooking = (booking) => {
-          // Get user name from metadata
-          const userName = booking.metadata?.user_name || 'N/A';
-          
-          // Get resource name from service
-          const resourceName = booking.service?.name || 'N/A';
-          
+          const userName = booking.metadata?.customer_name || booking.metadata?.user_name || booking.customer_name || 'N/A';
+
+          const resourceId = booking.resource?.id || booking.resource_id || null;
+          const resourceName = booking.resource?.name || (resourceId ? resourceMap.get(String(resourceId)) : undefined) || 'N/A';
+
           return {
             id: booking.id,
             customer: userName,
-            resource: {
-              id: booking.service?.id || null,
-              name: resourceName
-            },
+            resource: resourceId ? { id: resourceId, name: resourceName } : { id: null, name: resourceName },
+            service: booking.service ? { id: booking.service.id, name: booking.service.name } : undefined,
             starts_at: booking.starts_at,
             ends_at: booking.ends_at,
             duration: calculateDuration(booking.starts_at, booking.ends_at),
             status: booking.is_canceled ? 'Cancelled' : 'Confirmed',
             is_canceled: booking.is_canceled,
-            location: booking.location?.name || 'N/A'
+            location: booking.location?.name || booking.location_id || 'N/A'
           };
         };
 

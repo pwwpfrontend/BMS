@@ -647,17 +647,17 @@ export default function Plans() {
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Form Type
+                      Associate form
                     </label>
                     <select
                       value={newPlan.formType}
                       onChange={(e) => handleFormTypeChange(e.target.value)}
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select form type</option>
-                      {formTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                      <option value="">Select a form</option>
+                      {forms.map((form) => (
+                        <option key={form._id} value={form.type}>
+                          {form.name}
                         </option>
                       ))}
                     </select>

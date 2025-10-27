@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Clock, MapPin, Building, Settings, User, Upload } from 'lucide-react';
 import bookingAPI from '../services/bookingApi';
 import imageAPI from '../services/imageApi';
-import customerAPI from '../services/customerApi';
 
 // Inline Time Picker Component with Availability Check
 function TimePickerInline({ value, onChange, onClose, availableTimeSlots = [] }) {
@@ -56,6 +55,8 @@ function TimePickerInline({ value, onChange, onClose, availableTimeSlots = [] })
       scrollToCenter(periodRef, periods, period);
     }, 0);
   }, []);
+
+  
 
   const handleScroll = (ref, items, setter) => {
     if (!ref.current) return;
@@ -335,13 +336,43 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
   // Customer management functions
   const loadCustomers = async () => {
     try {
-      console.log('👥 Loading customers...');
-      const response = await customerAPI.getCustomers();
-      setCustomers(response.data || []);
-      console.log(`✅ Loaded ${response.data?.length || 0} customers`);
+      const config = {
+        domain: "bms-optimus.us.auth0.com",
+        audience: "https://bms-optimus.us.auth0.com/api/v2/",
+        clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+        clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
+        userRoleId: "rol_FdjheKGmIFxzp6hR"
+      };
+
+      const tokenResp = await fetch(`https://${config.domain}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+          audience: config.audience,
+          grant_type: 'client_credentials',
+          scope: 'read:users read:roles'
+        })
+      });
+      if (!tokenResp.ok) throw new Error('Failed to get management token');
+      const { access_token } = await tokenResp.json();
+
+      const roleUsersResp = await fetch(`${config.audience}roles/${config.userRoleId}/users`, {
+        headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' }
+      });
+      if (!roleUsersResp.ok) throw new Error('Failed to fetch users with User role');
+      const roleUsers = await roleUsersResp.json();
+
+      const customersData = roleUsers.map(user => ({
+        id: user.user_id,
+        name: user.user_metadata?.username || user.name || (user.email?.split('@')[0] || 'User'),
+        email: user.email,
+        phone: user.phone_number || ''
+      }));
+      setCustomers(customersData);
     } catch (error) {
       console.error('Error loading customers:', error);
-      // Fallback to empty array
       setCustomers([]);
     }
   };
@@ -398,10 +429,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         
         console.log('📋 Loading form data for Add Booking...');
         
-        const [locationsRes, resourcesRes, servicesRes] = await Promise.all([
+        const [locationsRes, resourcesRes] = await Promise.all([
           bookingAPI.getLocations(),
-          bookingAPI.getResources(),
-          bookingAPI.getServices()
+          bookingAPI.getResources()
         ]);
         
         // Load customers
@@ -409,7 +439,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         
         const locations = locationsRes.data || [];
         const resources = resourcesRes.data || [];
-        const services = servicesRes.data || [];
+        const services = [];
         
         // Use specific Hong Kong location ID from API testing
         const HONG_KONG_LOCATION_ID = '7aa01d57-aacf-480e-9065-d48d46ffb365';
@@ -420,6 +450,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
         if (hkLocation) {
           setHongKongLocation(hkLocation);
           setFormData(prev => ({ ...prev, location_id: hkLocation.id }));
+        } else {
+          // Fallback: set known HK location id so booking API accepts payload
+          setFormData(prev => ({ ...prev, location_id: HONG_KONG_LOCATION_ID }));
         }
         
         console.log(`✅ Form data loaded: Hong Kong location (${hkLocation?.name}), ${resources.length} resources, ${services.length} services`);
@@ -439,6 +472,23 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
 
     loadFormData();
   }, []);
+
+  // Auto-fetch service_id for selected resource
+  useEffect(() => {
+    const resolveServiceId = async () => {
+      if (!formData.resource_id) {
+        setFormData(prev => ({ ...prev, service_id: '' }));
+        return;
+      }
+      try {
+        const sid = await bookingAPI.getServiceIdByResource(formData.resource_id);
+        setFormData(prev => ({ ...prev, service_id: sid || '' }));
+      } catch (e) {
+        setFormData(prev => ({ ...prev, service_id: '' }));
+      }
+    };
+    resolveServiceId();
+  }, [formData.resource_id]);
 
   useEffect(() => {
     const loadAvailableTimeSlots = async () => {
@@ -532,7 +582,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
     if (!formData.customer_id && !formData.customer_name.trim()) return 'Please select or create a customer';
     if (!formData.location_id) return 'Please select a location';
     if (!formData.resource_id) return 'Please select a resource';
-    if (!formData.service_id) return 'Please select a service';
+    // service_id is auto-resolved from resource
     if (!formData.date) return 'Please select a date';
     if (!formData.start_time) return 'Please select start time';
     if (!formData.end_time) return 'Please select end time';
@@ -616,11 +666,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
       console.log(`📅 Booking details: ${formData.date} ${formData.start_time}-${formData.end_time}`);
       console.log(`🏭 Resource: ${resources.find(r => r.id === formData.resource_id)?.name}`);
       
-      try {
-        await bookingAPI.associateServiceToResource(formData.service_id, formData.resource_id);
-      } catch (associationError) {
-        console.warn('Association warning:', associationError);
-      }
+      // Service association not required; a single service is attached per resource
       
       console.log('🗺️ Checking existing schedules for resource...');
       
@@ -1002,29 +1048,15 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
 
   const handleResourceChange = (resourceId) => {
     handleChange('resource_id', resourceId);
-    loadAvailableServices(resourceId);
-    if (formData.service_id) {
-      handleChange('service_id', '');
-    }
   };
 
-  const loadAvailableServices = async (resourceId) => {
-    if (!resourceId) {
-      setAvailableServices(services);
-      return;
-    }
-
-    try {
-      setAvailableServices(services);
-    } catch (error) {
-      console.error('Error loading available services:', error);
-      setAvailableServices(services);
-    }
+  const loadAvailableServices = async () => {
+    setAvailableServices([]);
   };
 
   useEffect(() => {
-    loadAvailableServices(formData.resource_id);
-  }, [services, formData.resource_id]);
+    loadAvailableServices();
+  }, []);
 
   const handleCreateLocation = async () => {
     if (!newLocation.name.trim()) {
@@ -1323,45 +1355,7 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
             </select>
           </div>
 
-          {/* Service Selection */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-              <Settings className="w-4 h-4" />
-              Service
-            </label>
-            {formData.resource_id && (
-              <div className="space-y-2 mb-2">
-                <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                  💡 Services will be automatically associated with the selected resource when booking is created
-                </p>
-                <p className="text-xs text-green-600 bg-green-50 p-2 rounded">
-                  📅 If the resource has no schedule, one will be created automatically (9 AM - 5 PM)
-                </p>
-              </div>
-            )}
-            <select
-              value={formData.service_id}
-              onChange={(e) => {
-                if (e.target.value === 'CREATE_NEW') {
-                  setShowCreateService(true);
-                } else {
-                  handleChange('service_id', e.target.value);
-                }
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              required
-            >
-              <option value="">Select a service</option>
-              {availableServices.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name} - ${service.price}
-                </option>
-              ))}
-              {/* <option value="CREATE_NEW" className="font-medium text-blue-600">
-                + Create New Service
-              </option> */}
-            </select>
-          </div>
+          {/* Service selection removed: service_id auto-fetched from resource */}
 
           {/* Date Selection */}
           <div>

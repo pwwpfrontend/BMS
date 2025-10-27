@@ -984,6 +984,71 @@ export default function FormDetails() {
         </main>
       </div>
 
+      {/* Send Form Modal */}
+      {showSendForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Send form</h2>
+              <button onClick={() => setShowSendForm(false)} className="text-gray-400 hover:text-gray-600">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
+                <select
+                  value={sendFormData.customerEmail}
+                  onChange={(e) => setSendFormData({ ...sendFormData, customerEmail: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a customer</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.email}>{c.name} ({c.email})</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Form</label>
+                <input
+                  type="text"
+                  value={formDetails.name}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="emailNotify"
+                  type="checkbox"
+                  checked={sendFormData.emailNotification}
+                  onChange={(e) => setSendFormData({ ...sendFormData, emailNotification: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="emailNotify" className="text-sm text-gray-700">Send email notification</label>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowSendForm(false)}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendForm}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Send form
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Question Modal */}
       {showAddQuestion && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

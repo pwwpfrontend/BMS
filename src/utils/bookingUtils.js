@@ -87,7 +87,12 @@ export const formatBookingDate = (startDate, endDate) => {
   };
   
   export const getCustomerName = (booking) => {
-    return booking.metadata?.user_name || 'Unknown User';
+    return (
+      booking.metadata?.customer_name ||
+      booking.metadata?.user_name ||
+      booking.customer_name ||
+      'N/A'
+    );
   };
   
   export const parseDuration = (isoDuration) => {
@@ -112,16 +117,18 @@ export const formatBookingDate = (startDate, endDate) => {
       return null;
     }
     
+    const resourceName = booking.resource?.name || 'N/A';
+    const serviceName = booking.service?.name || 'N/A';
     return {
       id: booking.id || '',
-      title: `${booking.resource?.name || 'Unknown Resource'} - ${booking.service?.name || 'Unknown Service'}`,
+      title: `${resourceName} - ${serviceName}`,
       date: booking.starts_at && booking.ends_at ? formatBookingDate(booking.starts_at, booking.ends_at) : 'No date',
       customer: getCustomerEmail(booking),
       customerName: getCustomerName(booking),
       duration: booking.starts_at && booking.ends_at ? calculateDuration(booking.starts_at, booking.ends_at) : 'Unknown',
       status: getBookingStatus(booking),
-      resource: booking.resource || { name: 'Unknown Resource' },
-      service: booking.service || { name: 'Unknown Service' },
+      resource: booking.resource || { name: resourceName },
+      service: booking.service || { name: serviceName },
       location: booking.location || null,
       price: parseFloat(booking.price || 0),
       starts_at: booking.starts_at,

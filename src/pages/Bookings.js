@@ -29,7 +29,7 @@ const useBookingsData = () => {
       const response = await bookingAPI.getAllBookings(true);
       
       // Fetch cancelled booking IDs
-      const cancelledResponse = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+      const cancelledResponse = await fetch('http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -157,7 +157,7 @@ function BookingRow({ booking, isSelected, onSelect, onNavigateToDetail, onRefre
     try {
       if (booking.status !== 'Cancelled') {
         // Cancel booking using cancelled-meeting API
-        const response = await fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+        const response = await fetch('http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ booking_id: booking.id }),
@@ -451,7 +451,7 @@ function BookingsList() {
     try {
       if (action === 'cancel') {
         await Promise.all(selectedBookings.map(bookingId => 
-          fetch('https://njs-01.optimuslab.space/bms/cancelled-meeting', {
+          fetch('http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ booking_id: bookingId }),

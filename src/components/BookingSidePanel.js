@@ -99,22 +99,17 @@ const BookingSidePanel = ({
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [resourcesRes, servicesRes, locationsRes] = await Promise.all([
+      const [resourcesRes, locationsRes] = await Promise.all([
         bookingAPI.getResources(),
-        bookingAPI.getServices(),
         bookingAPI.getLocations()
       ]);
       
       setResources(resourcesRes.data || []);
-      setServices(servicesRes.data || []);
       setLocations(locationsRes.data || []);
       
       // Set defaults if available
       if (resourcesRes.data?.length > 0 && !formData.resource_id) {
         setFormData(prev => ({ ...prev, resource_id: resourcesRes.data[0].id }));
-      }
-      if (servicesRes.data?.length > 0 && !formData.service_id) {
-        setFormData(prev => ({ ...prev, service_id: servicesRes.data[0].id }));
       }
       if (locationsRes.data?.length > 0 && !formData.location_id) {
         setFormData(prev => ({ ...prev, location_id: locationsRes.data[0].id }));
@@ -210,9 +205,15 @@ const BookingSidePanel = ({
         }
       }
 
+      // Ensure service_id is available
+      let serviceId = formData.service_id;
+      if (!serviceId && formData.resource_id) {
+        try { serviceId = await bookingAPI.getServiceIdByResource(formData.resource_id); } catch {}
+      }
+
       const bookingData = {
         resource_id: formData.resource_id,
-        service_id: formData.service_id,
+        service_id: serviceId || '',
         location_id: formData.location_id,
         starts_at: startsAt,
         ends_at: endsAt,
