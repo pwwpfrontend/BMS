@@ -1227,9 +1227,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   {customer.name} {customer.email && `(${customer.email})`}
                 </option>
               ))}
-              <option value="CREATE_NEW" className="font-medium text-blue-600">
+              {/* <option value="CREATE_NEW" className="font-medium text-blue-600">
                 + Add New Customer
-              </option>
+              </option> */}
             </select>
           </div>
 
@@ -1317,9 +1317,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   {resource.name} (Max: {resource.max_simultaneous_bookings})
                 </option>
               ))}
-              <option value="CREATE_NEW" className="font-medium text-blue-600">
+              {/* <option value="CREATE_NEW" className="font-medium text-blue-600">
                 + Create New Resource
-              </option>
+              </option> */}
             </select>
           </div>
 
@@ -1357,9 +1357,9 @@ export default function AddBookingForm({ onClose, onBookingCreated }) {
                   {service.name} - ${service.price}
                 </option>
               ))}
-              <option value="CREATE_NEW" className="font-medium text-blue-600">
+              {/* <option value="CREATE_NEW" className="font-medium text-blue-600">
                 + Create New Service
-              </option>
+              </option> */}
             </select>
           </div>
 
