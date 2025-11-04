@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, Package, CreditCard, ChevronDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import bookingAPI from '../services/bookingApi';
-import { transformBookingForUI, getStatusBadgeClass, formatTime } from '../utils/bookingUtils';
+import { getStatusBadgeClass, formatTime } from '../utils/bookingUtils';
+
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [bookings, setBookings] = useState([]);
   const [cancelledBookings, setCancelledBookings] = useState([]);
   const [resources, setResources] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedResource, setSelectedResource] = useState('all');
@@ -17,22 +18,304 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
+  const API_BASE_URL = 'https://njs-01.optimuslab.space';
+
+  // Fetch Auth0 users and create a mapping
+const fetchAuth0Users = async () => {
+  try {
+    const config = {
+      domain: "bms-optimus.us.auth0.com",
+      audience: "https://bms-optimus.us.auth0.com/api/v2/",
+      clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+      clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r"
+    };
+
+    const tokenResp = await fetch(`https://${config.domain}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        audience: config.audience,
+        grant_type: 'client_credentials',
+        scope: 'read:users'
+      })
+    });
+    
+    if (!tokenResp.ok) return new Map();
+    
+    const { access_token } = await tokenResp.json();
+    const allUsersResp = await fetch(`${config.audience}users`, {
+      headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' }
+    });
+    
+    if (!allUsersResp.ok) return new Map();
+    
+    const allUsers = await allUsersResp.json();
+    
+    // Create a map: email -> username
+    const userMap = new Map();
+    allUsers.forEach(user => {
+      const username = user.user_metadata?.username || user.username || user.email?.split('@')[0] || 'User';
+      userMap.set(user.email, username);
+    });
+    
+    return userMap;
+  } catch (error) {
+    console.error('Error fetching Auth0 users:', error);
+    return new Map();
+  }
+};
+
+  // Fetch customers from Auth0 to get proper usernames
+// const fetchCustomersFromAuth0 = async () => {
+//   try {
+//     const config = {
+//       domain: "bms-optimus.us.auth0.com",
+//       audience: "https://bms-optimus.us.auth0.com/api/v2/",
+//       clientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
+//       clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r"
+//     };
+
+//     const tokenResp = await fetch(`https://${config.domain}/oauth/token`, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         client_id: config.clientId,
+//         client_secret: config.clientSecret,
+//         audience: config.audience,
+//         grant_type: 'client_credentials',
+//         scope: 'read:users'
+//       })
+//     });
+    
+//     if (!tokenResp.ok) return new Map();
+    
+//     const { access_token } = await tokenResp.json();
+//     const usersResp = await fetch(`${config.audience}users`, {
+//       headers: { 
+//         Authorization: `Bearer ${access_token}`, 
+//         'Content-Type': 'application/json' 
+//       }
+//     });
+    
+//     if (!usersResp.ok) return new Map();
+    
+//     const users = await usersResp.json();
+    
+//     // Create a map of email -> username
+//     const emailToUsername = new Map();
+//     users.forEach(user => {
+//       const username = user.user_metadata?.username || user.username || user.email?.split('@')[0] || user.email;
+//       if (user.email) {
+//         emailToUsername.set(user.email.toLowerCase(), username);
+//       }
+//     });
+    
+//     return emailToUsername;
+//   } catch (error) {
+//     console.error('Error fetching customers from Auth0:', error);
+//     return new Map();
+//   }
+// };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [bookingsResponse, cancelledResponse, resourcesResponse] = await Promise.all([
-          bookingAPI.getAllBookings(false),
-          bookingAPI.getCancelledBookings(),
-          bookingAPI.getResources()
+
+    const userMap = await fetchAuth0Users();
+
+        // Fetch all bookings from the Booking System API
+        const fetchBookings = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/booking_system/viewAllBookings`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch bookings');
+            }
+
+            const result = await response.json();
+            console.log("📋 All bookings fetched:", result);
+            
+            // Endpoint returns array or {data: []}
+            return Array.isArray(result) ? result : (result.data || []);
+          } catch (error) {
+            console.error("Error fetching bookings:", error);
+            return [];
+          }
+        };
+
+        // Fetch resources
+        const fetchResources = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/booking_system/viewAllresources`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch resources');
+            }
+
+            const resourcesData = await response.json();
+            console.log("📦 Resources fetched:", resourcesData);
+            return Array.isArray(resourcesData) ? resourcesData : (resourcesData.data || []);
+          } catch (error) {
+            console.error("Error fetching resources:", error);
+            return [];
+          }
+        };
+
+        // Fetch plans
+        const fetchPlans = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/bhms/plans`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch plans');
+            }
+
+            const plansData = await response.json();
+            console.log("💳 Plans fetched:", plansData);
+            return Array.isArray(plansData) ? plansData : [];
+          } catch (error) {
+            console.error("Error fetching plans:", error);
+            return [];
+          }
+        };
+
+        // Fetch cancelled bookings
+        const fetchCancelledBookings = async () => {
+          try {
+            const response = await fetch(`http://optimus-india-njs-01.netbird.cloud:6007/bms/cancelled-meeting`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to fetch cancelled bookings');
+            }
+
+            const cancelledData = await response.json();
+            console.log("❌ Cancelled meetings fetched:", cancelledData);
+            return Array.isArray(cancelledData) ? cancelledData : [];
+          } catch (error) {
+            console.error("Error fetching cancelled bookings:", error);
+            return [];
+          }
+        };
+
+        const [bookingsData, resourcesData, plansData, cancelledData] = await Promise.all([
+          fetchBookings(),
+          fetchResources(),
+          fetchPlans(),
+          fetchCancelledBookings()
         ]);
+
+        // Extract cancelled booking IDs
+        const cancelledBookingIds = cancelledData
+          .map(item => item.booking_id)
+          .filter(id => id);
+
+        console.log(`📋 Dashboard: Found ${cancelledBookingIds.length} cancelled booking IDs`);
+
+        // Helper function to calculate duration
+        const calculateDuration = (start, end) => {
+          if (!start || !end) return 'N/A';
+          try {
+            const startDate = new Date(start);
+            const endDate = new Date(end);
+            const diff = Math.abs(endDate - startDate);
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            if (hours > 0) {
+              return `${hours} hour${hours > 1 ? 's' : ''}`;
+            }
+            return `${minutes} min`;
+          } catch (e) {
+            return 'N/A';
+          }
+        };
+
+        // Create a lookup for resources to map names when missing in booking
+        const resourceMap = new Map((resourcesData || []).map(r => [String(r.id), r.name]));
+
+        // Transform booking from API format
+       // Transform booking from API format
+const transformBooking = (booking) => {
+  // Extract email from customer_id or customer_name
+  let email = booking.customer_id || booking.customer_name || booking.metadata?.customer_name;
+  
+  // If customer_name looks like an email, use it
+  if (booking.customer_name && booking.customer_name.includes('@')) {
+    email = booking.customer_name;
+  } else if (booking.metadata?.customer_name && booking.metadata.customer_name.includes('@')) {
+    email = booking.metadata.customer_name;
+  }
+  
+  // Get proper username from Auth0 user map
+  const userName = email && userMap.has(email) 
+    ? userMap.get(email) 
+    : (booking.metadata?.customer_name || booking.customer_name || 'N/A');
+
+  const resourceId = booking.resource?.id || booking.resource_id || null;
+  const resourceName = booking.resource?.name || (resourceId ? resourceMap.get(String(resourceId)) : undefined) || 'N/A';
+
+  return {
+    id: booking.id,
+    customer: userName,
+    resource: resourceId ? { id: resourceId, name: resourceName } : { id: null, name: resourceName },
+    service: booking.service ? { id: booking.service.id, name: booking.service.name } : undefined,
+    starts_at: booking.starts_at,
+    ends_at: booking.ends_at,
+    duration: calculateDuration(booking.starts_at, booking.ends_at),
+    status: booking.is_canceled ? 'Cancelled' : 'Confirmed',
+    is_canceled: booking.is_canceled,
+    location: booking.location?.name || booking.location_id || 'N/A'
+  };
+};
+
+        // Transform all bookings
+        const allTransformedBookings = bookingsData.map(transformBooking);
         
-        const transformedBookings = bookingsResponse.data.map(transformBookingForUI);
-        const transformedCancelled = cancelledResponse.data.map(transformBookingForUI);
+        // Separate cancelled and active bookings
+        const cancelled = [];
+        const active = [];
         
-        setBookings(transformedBookings);
-        setCancelledBookings(transformedCancelled);
-        setResources(resourcesResponse.data || []);
+        allTransformedBookings.forEach(booking => {
+          if (cancelledBookingIds.includes(booking.id)) {
+            cancelled.push({
+              ...booking,
+              status: 'Cancelled',
+              is_canceled: true
+            });
+          } else if (!booking.is_canceled) {
+            active.push(booking);
+          }
+        });
+        
+        console.log(`✅ Dashboard: Active bookings: ${active.length}, Cancelled: ${cancelled.length}`);
+        
+        setBookings(active);
+        setCancelledBookings(cancelled);
+        setResources(resourcesData);
+        setPlans(plansData);
       } catch (err) {
         setError('Failed to fetch data');
         console.error('Error fetching data:', err);
@@ -44,7 +327,6 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  // Get current week dates
   const getCurrentWeekDates = () => {
     const today = new Date();
     const currentDay = today.getDay();
@@ -52,7 +334,7 @@ export default function Dashboard() {
     const monday = new Date(today.setDate(diff));
     
     const weekDates = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 7; i++) {
       const date = new Date(monday);
       date.setDate(monday.getDate() + i);
       weekDates.push(date);
@@ -60,13 +342,29 @@ export default function Dashboard() {
     return weekDates;
   };
 
-  // Calculate statistics
-  const totalBookings = bookings.length;
-  const confirmedBookings = bookings.filter(b => b.status === 'Confirmed').length;
-  const totalResources = resources.length;
-  const uniqueCustomers = new Set(bookings.map(b => b.customer).filter(c => c && c !== 'N/A')).size;
+  const getCurrentMonth = () => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return monthNames[new Date().getMonth()];
+  };
 
-  // Generate chart data from actual bookings
+  const getCurrentMonthBookings = () => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    
+    return bookings.filter(b => {
+      if (!b.starts_at) return false;
+      const bookingDate = new Date(b.starts_at);
+      return bookingDate.getMonth() === currentMonth && 
+             bookingDate.getFullYear() === currentYear &&
+             b.status === 'Confirmed';
+    }).length;
+  };
+
+  const totalBookings = bookings.length;
+  const currentMonthConfirmedBookings = getCurrentMonthBookings();
+  const totalResources = resources.length;
+  const totalPlans = plans.length;
+
   const generateChartData = () => {
     const weekDates = getCurrentWeekDates();
     
@@ -98,27 +396,24 @@ export default function Dashboard() {
 
   const chartData = generateChartData();
   
-  // Calculate dynamic Y-axis range based on actual data
   const dataValues = chartData.map(d => d.value);
   const maxDataValue = Math.max(...dataValues, 0);
   
-  // Better Y-axis scaling for better visualization
   let yAxisMax;
   if (maxDataValue === 0) {
-    yAxisMax = 4; // Show 0-4 range when no data
+    yAxisMax = 4;
   } else if (maxDataValue <= 3) {
-    yAxisMax = 6; // Show 0-6 range for small values
+    yAxisMax = 6;
   } else if (maxDataValue <= 10) {
-    yAxisMax = Math.ceil(maxDataValue * 1.5); // 50% padding for medium values
+    yAxisMax = Math.ceil(maxDataValue * 1.5);
   } else {
-    yAxisMax = Math.ceil(maxDataValue * 1.3); // 30% padding for larger values
+    yAxisMax = Math.ceil(maxDataValue * 1.3);
   }
   
   const yAxisMin = 0;
   const yAxisRange = yAxisMax - yAxisMin;
   const yAxisStep = yAxisRange / 3;
   
-  // Generate 4 Y-axis labels
   const yAxisLabels = [
     Math.round(yAxisMax),
     Math.round(yAxisMax - yAxisStep),
@@ -126,7 +421,6 @@ export default function Dashboard() {
     yAxisMin
   ];
 
-  // Filter bookings for table
   const filteredBookings = bookings.filter(booking => {
     let matchesDate = true;
     let matchesStatus = true;
@@ -149,27 +443,28 @@ export default function Dashboard() {
 
   const recentBookings = filteredBookings.slice(0, 6);
   
-  // Filter cancelled bookings based on filter
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   
-  // Get start of current week (Monday)
   const startOfWeek = new Date(today);
   const day = startOfWeek.getDay();
   const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
   startOfWeek.setDate(diff);
   startOfWeek.setHours(0, 0, 0, 0);
   
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+  
   const filteredCancelledBookings = cancelledBookings.filter(booking => {
     if (!booking.starts_at) return false;
     const bookingDate = new Date(booking.starts_at);
-    const bookingDateStr = bookingDate.toISOString().split('T')[0];
     
     if (cancelledFilter === 'today') {
+      const bookingDateStr = bookingDate.toISOString().split('T')[0];
       return bookingDateStr === todayStr;
     } else {
-      // This week filter - show all cancelled bookings from Monday to today
-      return bookingDate >= startOfWeek && bookingDate <= today;
+      return bookingDate >= startOfWeek && bookingDate <= endOfWeek;
     }
   });
 
@@ -210,38 +505,21 @@ export default function Dashboard() {
               <p className="text-sm text-gray-500 mt-1">Overview of all of recent bookings, inventory and plans</p>
             </div>
 
-            {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {/* Recent Bookings Card */}
               <div 
                 onClick={() => navigate('/bookings')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="text-sm text-gray-600">Recent Bookings</div>
-                  <div className="text-xs text-gray-400">Oct</div>
+                  <div className="text-xs text-gray-400">{getCurrentMonth()}</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{confirmedBookings}</div>
+                  <div className="text-3xl font-semibold text-gray-900">{currentMonthConfirmedBookings}</div>
                   <Calendar className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
                 </div>
               </div>
 
-              {/* Total Customers Card */}
-              <div 
-                onClick={() => navigate('/customers')}
-                className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-sm text-gray-600">Total Customers</div>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-gray-900">{uniqueCustomers}</div>
-                  <Users className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
-                </div>
-              </div>
-
-              {/* Total Resources Card */}
               <div 
                 onClick={() => navigate('/resources')}
                 className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
@@ -255,24 +533,33 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Plans Card */}
               <div 
                 onClick={() => navigate('/plans')}
+                className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="text-sm text-gray-600">Total Plans</div>
+                </div>
+                <div className="flex items-end justify-between">
+                  <div className="text-3xl font-semibold text-gray-900">{totalPlans}</div>
+                  <CreditCard className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
+                </div>
+              </div>
+
+              <div 
                 className="bg-[#214BAE] rounded-lg p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="text-sm text-blue-100">Plans</div>
+                  <div className="text-sm text-blue-100">Cancelled Bookings</div>
                 </div>
                 <div className="flex items-end justify-between">
-                  <div className="text-3xl font-semibold text-white">03</div>
-                  <CreditCard className="w-5 h-5 text-white" strokeWidth={1.5} />
+                  <div className="text-3xl font-semibold text-white">{cancelledBookings.length}</div>
+                  <Calendar className="w-5 h-5 text-white" strokeWidth={1.5} />
                 </div>
               </div>
             </div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-              {/* Resource Usage Chart */}
               <div className="lg:col-span-2">
                 <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
                   <div className="flex items-center justify-between mb-6">
@@ -285,7 +572,7 @@ export default function Dashboard() {
                       >
                         <option value="all">All Resources</option>
                         {resources.map(resource => (
-                          <option key={resource.id} value={resource.id}>
+                          <option key={resource.id || resource._id} value={resource.id || resource._id}>
                             {resource.name}
                           </option>
                         ))}
@@ -294,25 +581,20 @@ export default function Dashboard() {
                     </div>
                   </div>
                   
-                  {/* Chart */}
                   <div className="relative" style={{ height: '260px', paddingLeft: '40px', paddingBottom: '32px' }}>
-                    {/* Y-axis labels */}
                     <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-sm text-gray-500 font-medium">
                       {yAxisLabels.map((label, i) => (
                         <span key={i}>{label}</span>
                       ))}
                     </div>
                     
-                    {/* Chart area with grid */}
                     <div className="h-full relative" style={{ paddingBottom: '32px' }}>
-                      {/* Horizontal grid lines */}
                       <div className="absolute inset-0 bottom-8 flex flex-col justify-between">
                         {yAxisLabels.map((val, i) => (
                           <div key={i} className="border-t border-dashed border-gray-200"></div>
                         ))}
                       </div>
                       
-                      {/* Line chart SVG */}
                       <svg className="absolute inset-0 w-full bottom-8" style={{ height: 'calc(100% - 32px)' }} preserveAspectRatio="none">
                         <defs>
                           <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -321,7 +603,6 @@ export default function Dashboard() {
                           </linearGradient>
                         </defs>
                         
-                        {/* Smooth curved line using cubic bezier for better interpolation */}
                         <path
                           fill="none"
                           stroke="url(#lineGradient)"
@@ -347,7 +628,6 @@ export default function Dashboard() {
                               return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
                             }
                             
-                            // Create smooth curve using Catmull-Rom spline approximation
                             let path = `M ${points[0].x},${points[0].y}`;
                             
                             for (let i = 0; i < points.length - 1; i++) {
@@ -356,7 +636,6 @@ export default function Dashboard() {
                               const p2 = points[i + 1];
                               const p3 = points[Math.min(points.length - 1, i + 2)];
                               
-                              // Control points for cubic bezier
                               const cp1x = p1.x + (p2.x - p0.x) / 6;
                               const cp1y = p1.y + (p2.y - p0.y) / 6;
                               const cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -368,12 +647,8 @@ export default function Dashboard() {
                             return path;
                           })()}
                         />
-                        
-                        {/* Data points */}
-                        
                       </svg>
                       
-                      {/* X-axis labels */}
                       <div className="absolute bottom-0 left-0 right-0 flex justify-between text-sm text-gray-500 font-medium">
                         {chartData.map((item, i) => (
                           <span key={i} className="text-center">{item.label}</span>
@@ -384,7 +659,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Cancelled Bookings */}
               <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 flex flex-col">
                 <div className="flex items-center justify-between mb-5">
                   <h3 className="text-lg font-semibold text-gray-900">Cancelled Bookings</h3>
@@ -408,8 +682,8 @@ export default function Dashboard() {
                         <div className="text-sm font-semibold text-gray-900 mb-1.5">
                           {booking.resource?.name || 'N/A'}
                         </div>
-                        <div className="text-xs text-gray-500 mb-1">
-                          {booking.customer || 'N/A'}
+                        <div className="text-xs text-gray-600 mb-1.5 font-medium">
+                          User: {booking.customer}
                         </div>
                         <div className="text-xs text-gray-400">
                           {booking.starts_at ? new Date(booking.starts_at).toLocaleDateString('en-US', { 
@@ -430,7 +704,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Recent Bookings Table */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
@@ -468,7 +741,7 @@ export default function Dashboard() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resource</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Time</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Time</th>
@@ -480,7 +753,7 @@ export default function Dashboard() {
                     {recentBookings.length > 0 ? (
                       recentBookings.map((booking) => (
                         <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-3.5 text-sm text-gray-900">{booking.customer}</td>
+                          <td className="px-6 py-3.5 text-sm text-gray-900 font-medium">{booking.customer}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{booking.resource?.name || 'N/A'}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{formatTime(booking.starts_at)}</td>
                           <td className="px-6 py-3.5 text-sm text-gray-900">{formatTime(booking.ends_at)}</td>
@@ -508,4 +781,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
+} 

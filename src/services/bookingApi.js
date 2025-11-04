@@ -1,181 +1,409 @@
-const BASE_URL = 'http://optimus-india-njs-01.netbird.cloud:4000/booking_system';
+const API_BASE_URL = 'https://njs-01.optimuslab.space/booking_system';
 
-class BookingAPI {
-  // Helper method to make API requests
-  async apiRequest(endpoint, options = {}) {
-    const url = `${BASE_URL}${endpoint}`;
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
-    };
-
+const bookingAPI = {
+  // Get all bookings
+  getAllBookings: async (includeAll = false) => {
     try {
-      const response = await fetch(url, config);
-      
+      const response = await fetch(`${API_BASE_URL}/viewAllBookings`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
-      return await response.json();
+
+      const data = await response.json();
+      return { data: data || [] };
     } catch (error) {
-      console.error('API Request failed:', error);
+      console.error('Error fetching bookings:', error);
       throw error;
     }
-  }
+  },
 
-  // Bookings
-  async getAllBookings(includeCancelled = true) {
-    const endpoint = includeCancelled ? '/all-bookings?include_cancelled=true' : '/all-bookings';
-    return this.apiRequest(endpoint);
-  }
+  // Get bookings filtered by resource, service, or location
+  getFilteredBookings: async (filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.resource_id) params.append('resource_id', filters.resource_id);
+      if (filters.service_id) params.append('service_id', filters.service_id);
+      if (filters.location_id) params.append('location_id', filters.location_id);
+      
+      const response = await fetch(`${API_BASE_URL}/viewFilteredBookings?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-  async getCancelledBookings() {
-    return this.apiRequest('/all-bookings?status=cancelled');
-  }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-  async createBooking(bookingData) {
-    return this.apiRequest('/create-booking', {
-      method: 'POST',
-      body: JSON.stringify(bookingData),
-    });
-  }
+      const data = await response.json();
+      return { data: data || [] };
+    } catch (error) {
+      console.error('Error fetching filtered bookings:', error);
+      throw error;
+    }
+  },
 
-  // Additional methods needed for booking creation form
-  async getLocations() {
-    return this.apiRequest('/all-locations');
-  }
+  // Get single booking by ID
+  getBooking: async (bookingId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewBooking/${bookingId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-  async getResources() {
-    return this.apiRequest('/all-resources');
-  }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-  async getServices() {
-    return this.apiRequest('/all-services');
-  }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching booking:', error);
+      throw error;
+    }
+  },
 
-  // Create new items
-  async createLocation(locationData) {
-    return this.apiRequest('/create-location', {
-      method: 'POST',
-      body: JSON.stringify(locationData),
-    });
-  }
+  // Create a new booking with proper format
+  createBooking: async (bookingData) => {
+    try {
+      // Ensure proper datetime format with timezone
+      const payload = {
+        resource_id: bookingData.resource_id,
+        service_id: bookingData.service_id,
+        location_id: bookingData.location_id,
+        starts_at: bookingData.starts_at, // Format: "2025-10-30T09:00:00+08:00"
+        ends_at: bookingData.ends_at,     // Format: "2025-10-30T10:00:00+08:00"
+        price: bookingData.price || "0.000",
+        customer_id: bookingData.customer_id || "",
+        customer_name: bookingData.customer_name || bookingData.metadata?.user_name || "Guest",
+      };
 
-  async createResource(resourceData) {
-    return this.apiRequest('/create-resource', {
-      method: 'POST',
-      body: JSON.stringify(resourceData),
-    });
-  }
+      console.log('Creating booking with payload:', payload);
 
-  async createService(serviceData) {
-    return this.apiRequest('/create-service', {
-      method: 'POST',
-      body: JSON.stringify(serviceData),
-    });
-  }
+      const response = await fetch(`${API_BASE_URL}/createBookings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
 
-  async updateBooking(bookingId, updateData) {
-    return this.apiRequest(`/update-booking/${bookingId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(updateData),
-    });
-  }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
 
-  async deleteBooking(bookingId) {
-    return this.apiRequest(`/delete-booking/${bookingId}`, {
-      method: 'DELETE',
-    });
-  }
+      const data = await response.json();
+      console.log('Booking created successfully:', data);
+      return data;
+    } catch (error) {
+      console.error('Error creating booking:', error);
+      throw error;
+    }
+  },
 
-  // Associations (Service ↔ Resource)
-  async associateServiceToResource(serviceId, resourceId) {
-    return this.apiRequest(`/associate-service/${serviceId}/resource/${resourceId}`, {
-      method: 'PUT',
-    });
-  }
+  // Update an existing booking
+  updateBooking: async (bookingId, updateData) => {
+    try {
+      const payload = {};
+      
+      if (updateData.starts_at) payload.starts_at = updateData.starts_at;
+      if (updateData.ends_at) payload.ends_at = updateData.ends_at;
+      if (updateData.price !== undefined) payload.price = updateData.price.toString();
 
-  async removeServiceResourceAssociation(serviceId, resourceId) {
-    return this.apiRequest(`/associate-service/${serviceId}/resource/${resourceId}`, {
-      method: 'DELETE',
-    });
-  }
+      console.log('Updating booking with payload:', payload);
 
-  async getServiceAssociations(serviceId) {
-    return this.apiRequest(`/associations/${serviceId}`);
-  }
+      const response = await fetch(`${API_BASE_URL}/updateBooking/${bookingId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
 
-  // Schedule Blocks (per resource)
-  async createScheduleBlock(resourceId, scheduleData) {
-    return this.apiRequest(`/resource/${resourceId}/schedule-blocks`, {
-      method: 'POST',
-      body: JSON.stringify(scheduleData),
-    });
-  }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
 
-  async getScheduleBlocks(resourceId) {
-    return this.apiRequest(`/resource/${resourceId}/schedule-blocks`);
-  }
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating booking:', error);
+      throw error;
+    }
+  },
 
-  async updateScheduleBlock(resourceId, blockId, updateData) {
-    return this.apiRequest(`/resource/${resourceId}/schedule-blocks/${blockId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(updateData),
-    });
-  }
+  // Delete a booking
+  deleteBooking: async (bookingId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/deleteBooking/${bookingId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-  async deleteScheduleBlock(resourceId, blockId) {
-    return this.apiRequest(`/resource/${resourceId}/schedule-blocks/${blockId}`, {
-      method: 'DELETE',
-    });
-  }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-  // Recurring Schedules (per resource)
-  async createRecurringSchedule(resourceId, scheduleData) {
-    return this.apiRequest(`/resource/${resourceId}/recurring-schedules`, {
-      method: 'POST',
-      body: JSON.stringify(scheduleData),
-    });
-  }
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      throw error;
+    }
+  },
 
-  async getRecurringSchedules(resourceId) {
-    return this.apiRequest(`/resource/${resourceId}/recurring-schedules`);
-  }
+  // Get available time slots for a resource on a specific date
+  getAvailableTimeSlots: async (resourceId, date, serviceId) => {
+    try {
+      // Get all bookings for this resource on this date
+      const bookingsResponse = await bookingAPI.getFilteredBookings({
+        resource_id: resourceId
+      });
+      const allBookings = bookingsResponse.data || [];
 
-  async updateRecurringSchedule(resourceId, schedId, updateData) {
-    return this.apiRequest(`/resource/${resourceId}/recurring-schedules/${schedId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(updateData),
-    });
-  }
+      // Filter bookings for the specific date
+      const dateString = date instanceof Date ? date.toISOString().split('T')[0] : date;
+      const dateBookings = allBookings.filter(booking => {
+        const bookingDate = booking.starts_at.split('T')[0];
+        return bookingDate === dateString;
+      });
 
-  async deleteRecurringSchedule(resourceId, schedId) {
-    return this.apiRequest(`/resource/${resourceId}/recurring-schedules/${schedId}`, {
-      method: 'DELETE',
-    });
-  }
+      // Get service details for duration constraints
+      let serviceDuration = 60; // default 60 minutes
+      let minDuration = 15;
+      let maxDuration = 240;
+      let interval = 15;
 
-  // Availability checking
-  async checkAvailability(availabilityData) {
-    return this.apiRequest('/check-availability', {
-      method: 'POST',
-      body: JSON.stringify(availabilityData),
-    });
-  }
+      if (serviceId) {
+        try {
+          const service = await bookingAPI.getService(serviceId);
+          // Parse ISO 8601 duration format (e.g., "PT1H" = 1 hour, "PT30M" = 30 minutes)
+          if (service.duration) {
+            const durationMatch = service.duration.match(/PT(\d+H)?(\d+M)?/);
+            if (durationMatch) {
+              const hours = durationMatch[1] ? parseInt(durationMatch[1]) : 0;
+              const minutes = durationMatch[2] ? parseInt(durationMatch[2]) : 0;
+              serviceDuration = hours * 60 + minutes;
+            }
+          }
+          if (service.min_duration) {
+            const minMatch = service.min_duration.match(/PT(\d+H)?(\d+M)?/);
+            if (minMatch) {
+              const hours = minMatch[1] ? parseInt(minMatch[1]) : 0;
+              const minutes = minMatch[2] ? parseInt(minMatch[2]) : 0;
+              minDuration = hours * 60 + minutes;
+            }
+          }
+          if (service.max_duration) {
+            const maxMatch = service.max_duration.match(/PT(\d+H)?(\d+M)?/);
+            if (maxMatch) {
+              const hours = maxMatch[1] ? parseInt(maxMatch[1]) : 0;
+              const minutes = maxMatch[2] ? parseInt(maxMatch[2]) : 0;
+              maxDuration = hours * 60 + minutes;
+            }
+          }
+          if (service.bookable_interval) {
+            const intervalMatch = service.bookable_interval.match(/PT(\d+M)/);
+            if (intervalMatch) {
+              interval = parseInt(intervalMatch[1]);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch service details, using defaults:', error);
+        }
+      }
 
-  // Get open slots for a resource
-  async getOpenSlots(resourceId, date, duration) {
-    const params = new URLSearchParams({ 
-      resource_id: resourceId,
-      date: date,
-      duration: duration 
-    });
-    return this.apiRequest(`/open-slots?${params.toString()}`);
-  }
-}
+      // Generate all possible time slots (6 AM to 11 PM with service interval)
+      const allSlots = [];
+      for (let hour = 6; hour < 23; hour++) {
+        for (let minute = 0; minute < 60; minute += interval) {
+          allSlots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+        }
+      }
 
-export default new BookingAPI();
+      // Mark slots as booked or available
+      const availableSlots = allSlots.map(slot => {
+        const [hour, minute] = slot.split(':').map(Number);
+        const slotStart = hour * 60 + minute; // minutes from midnight
+        const slotEnd = slotStart + serviceDuration;
+
+        // Check if this slot conflicts with any booking
+        const isBooked = dateBookings.some(booking => {
+          const bookingStartTime = booking.starts_at.split('T')[1].substring(0, 5);
+          const bookingEndTime = booking.ends_at.split('T')[1].substring(0, 5);
+          
+          const [bStartHour, bStartMin] = bookingStartTime.split(':').map(Number);
+          const [bEndHour, bEndMin] = bookingEndTime.split(':').map(Number);
+          
+          const bookingStart = bStartHour * 60 + bStartMin;
+          const bookingEnd = bEndHour * 60 + bEndMin;
+
+          // Check for overlap
+          return (slotStart < bookingEnd && slotEnd > bookingStart);
+        });
+
+        return {
+          time: slot,
+          available: !isBooked,
+          duration: serviceDuration
+        };
+      });
+
+      return {
+        slots: availableSlots,
+        serviceDuration,
+        minDuration,
+        maxDuration,
+        interval
+      };
+    } catch (error) {
+      console.error('Error getting available time slots:', error);
+      throw error;
+    }
+  },
+
+  // Get resources
+  getResources: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewAllResources`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data: data || [] };
+    } catch (error) {
+      console.error('Error fetching resources:', error);
+      throw error;
+    }
+  },
+
+  // Get services
+  getServices: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewAllServices`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data: data || [] };
+    } catch (error) {
+      console.error('Error fetching services:', error);
+      throw error;
+    }
+  },
+
+  // Get single service
+  getService: async (serviceId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewService/${serviceId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching service:', error);
+      throw error;
+    }
+  },
+
+  // Get locations
+  getLocations: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewAllLocations`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data: data || [] };
+    } catch (error) {
+      console.error('Error fetching locations:', error);
+      throw error;
+    }
+  },
+
+  // Get service ID by resource
+  getServiceIdByResource: async (resourceId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/viewResource/${resourceId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const resource = await response.json();
+      return resource.service_id || '';
+    } catch (error) {
+      console.error('Error fetching service ID:', error);
+      return '';
+    }
+  },
+
+  // Helper function to format datetime with timezone
+  formatDateTimeWithTimezone: (date, time, timezone) => {
+    // date: "2025-10-30" or Date object
+    // time: "09:00"
+    // timezone: "+08:00" or "Asia/Hong_Kong"
+    
+    const dateStr = date instanceof Date ? date.toISOString().split('T')[0] : date;
+    
+    // Convert timezone name to offset if needed
+    let offset = timezone;
+    if (timezone.includes('/')) {
+      const timezoneMap = {
+        'Asia/Hong_Kong': '+08:00',
+        'Asia/Kolkata': '+05:30',
+        'Asia/Singapore': '+08:00',
+        'America/New_York': '-05:00',
+        'Europe/London': '+00:00',
+      };
+      offset = timezoneMap[timezone] || '+00:00';
+    }
+    
+    return `${dateStr}T${time}:00${offset}`;
+  }
+};
+
+export default bookingAPI;
