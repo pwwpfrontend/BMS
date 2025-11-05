@@ -26,6 +26,8 @@ export default function FormDetails() {
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [newTypeValue, setNewTypeValue] = useState('');
   const [allForms, setAllForms] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
 
   const [formDetails, setFormDetails] = useState({
     name: '',
@@ -68,6 +70,36 @@ export default function FormDetails() {
     userRoleId: "rol_FdjheKGmIFxzp6hR"
   };
 
+  // Resolve access token (same approach as other pages)
+  const getApiToken = () =>
+    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('access_token')) ||
+    (typeof localStorage !== 'undefined' && localStorage.getItem('access_token')) ||
+    (typeof window !== 'undefined' && (window.ACCESS_TOKEN || window.BEARER_TOKEN)) ||
+    (typeof process !== 'undefined' && process.env && process.env.REACT_APP_API_BEARER_TOKEN) || '';
+
+  const fetchPlans = async () => {
+    try {
+      const data = await formsAPI.getPlans(getApiToken());
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      const mapped = list.map(p => ({ id: p._id, name: p.name }));
+      setPlans(mapped);
+    } catch (e) {
+      console.error('Error fetching plans', e);
+      setPlans([]);
+    }
+  };
+
+  const handlePlanChange = async (e) => {
+    const planId = e.target.value;
+    setSelectedPlanId(planId);
+    try {
+      await formsAPI.updateForm(formId, { planlink: planId }, getApiToken());
+    } catch (err) {
+      console.error('Failed to link plan', err);
+      alert('Failed to link plan to form');
+    }
+  };
+
   const nameFromEmail = (em) => {
     if (!em || typeof em !== 'string') return '';
     const local = em.split('@')[0];
@@ -78,7 +110,7 @@ export default function FormDetails() {
   const loadInterests = async () => {
     try {
       setLoadingInterests(true);
-      const data = await formsAPI.getInterested();
+      const data = await formsAPI.getInterested(getApiToken());
       const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
       const filtered = list.filter(i => !i.formId || i.formId === formId || (i.form?._id && i.form?._id === formId));
       const mapped = filtered.map((i, idx) => ({
@@ -109,7 +141,7 @@ export default function FormDetails() {
         contextType: 'interest',
         contextId: interest.id,
       };
-      await formsAPI.sendFormAssignment(payload);
+      await formsAPI.sendFormAssignment(payload, getApiToken());
       alert('Form sent to user');
     } catch (e) {
       console.error('Failed to send form from interest', e);
@@ -189,7 +221,7 @@ export default function FormDetails() {
   // Fetch available form types from API
   const fetchAvailableFormTypes = async () => {
     try {
-      const allForms = await formsAPI.getAllForms();
+      const allForms = await formsAPI.getAllForms(getApiToken());
       setAllForms(allForms);
       const uniqueTypes = [...new Set(allForms.map(form => form.type).filter(type => type))];
       setAvailableFormTypes(uniqueTypes);
@@ -203,6 +235,7 @@ export default function FormDetails() {
     if (formId) {
       loadFormData();
       fetchAvailableFormTypes();
+      fetchPlans();
     }
   }, [formId]);
 
@@ -236,7 +269,7 @@ export default function FormDetails() {
       setLoading(true);
       setError('');
       
-      const formResponse = await formsAPI.getFormById(formId);
+      const formResponse = await formsAPI.getFormById(formId, getApiToken());
       
       setFormDetails({
         name: formResponse.name,
@@ -244,6 +277,9 @@ export default function FormDetails() {
         type: formResponse.type || '',
         active: formResponse.active !== undefined ? formResponse.active : true
       });
+      // Preselect linked plan if present
+      const linkedPlanId = typeof formResponse.planlink === 'object' ? formResponse.planlink?._id : (formResponse.planlink || '');
+      if (linkedPlanId) setSelectedPlanId(linkedPlanId);
       
       const transformedQuestions = formResponse.fields?.map(field => ({
         id: field._id,
@@ -259,7 +295,7 @@ export default function FormDetails() {
       setQuestions(transformedQuestions);
       
       try {
-        const responsesData = await formsAPI.getBhmsFormResponses(formId);
+        const responsesData = await formsAPI.getBhmsFormResponses(formId, getApiToken());
         const transformedResponses = (Array.isArray(responsesData) ? responsesData : []).map((r, index) => {
           const nameFromEmail = (em) => {
             if (!em || typeof em !== 'string') return '';
@@ -322,7 +358,7 @@ export default function FormDetails() {
         active: newQuestion.active !== undefined ? newQuestion.active : true
       };
       
-      await formsAPI.addFormField(formId, fieldData);
+      await formsAPI.addFormField(formId, fieldData, getApiToken());
       await loadFormData();
       
       setShowAddQuestion(false);
@@ -375,7 +411,7 @@ export default function FormDetails() {
         active: newQuestion.active !== undefined ? newQuestion.active : true
       };
       
-      await formsAPI.updateFormField(formId, editingQuestion.id, fieldData);
+      await formsAPI.updateFormField(formId, editingQuestion.id, fieldData, getApiToken());
       await loadFormData();
       
       setShowEditQuestion(false);
@@ -415,7 +451,7 @@ export default function FormDetails() {
     try {
       setError('');
       
-      await formsAPI.deleteFormField(formId, questionId);
+      await formsAPI.deleteFormField(formId, questionId, getApiToken());
       await loadFormData();
       
       setActiveDropdown(null);
@@ -454,7 +490,7 @@ export default function FormDetails() {
         active: formDetails.active !== undefined ? formDetails.active : true
       };
       
-      await formsAPI.updateForm(formId, formData);
+      await formsAPI.updateForm(formId, formData, getApiToken());
       
       // Update available form types if new type was added
       if (formDetails.type && !availableFormTypes.includes(formDetails.type)) {
@@ -480,7 +516,7 @@ export default function FormDetails() {
         active: newStatus
       };
       
-      await formsAPI.updateForm(formId, formData);
+      await formsAPI.updateForm(formId, formData, getApiToken());
       setFormDetails({...formDetails, active: newStatus});
     } catch (err) {
       setError('Failed to toggle form status. Please try again.');
@@ -876,6 +912,22 @@ export default function FormDetails() {
                               </div>
                             </div>
                           )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Linked Plan
+                          </label>
+                          <select
+                            value={selectedPlanId}
+                            onChange={handlePlanChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select a plan</option>
+                            {plans.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
                         </div>
 
                         <div className="flex items-center gap-3">

@@ -193,6 +193,10 @@ class FormsAPI {
     return this.apiRequest(`https://njs-01.optimuslab.space/bhms/form-responses/${formId}`, { token });
   }
 
+  async getPlans(token) {
+    return this.apiRequest('https://njs-01.optimuslab.space/booking_features/plans', { token });
+  }
+
   // Response status update
   async updateResponseStatus(responseId, status, token) {
     return this.apiRequest(`https://njs-01.optimuslab.space/booking_features/form-responses/${responseId}/status`, {
