@@ -35,7 +35,6 @@ export default function FormDetails() {
     type: '',
     active: true
   });
-
   const [questions, setQuestions] = useState([]);
   const [responses, setResponses] = useState([]);
   const [responseFilter, setResponseFilter] = useState('pending');
@@ -43,6 +42,8 @@ export default function FormDetails() {
   const [showResponseDetails, setShowResponseDetails] = useState(false);
   const [interests, setInterests] = useState([]);
   const [loadingInterests, setLoadingInterests] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [interestedSearch, setInterestedSearch] = useState('');
 
   const [newQuestion, setNewQuestion] = useState({
     question: '',
@@ -68,6 +69,26 @@ export default function FormDetails() {
     clientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
     audience: "https://bms-optimus.us.auth0.com/api/v2/",
     userRoleId: "rol_FdjheKGmIFxzp6hR"
+  };
+
+  const handleExportInterests = () => {
+    const rows = [
+      ['Form', 'Email', 'Current Plan', 'Requested on'],
+      ...filteredInterests.map(item => [
+        item.formName || '',
+        item.email || '',
+        item.currentPlan || '',
+        item.sentOn || ''
+      ])
+    ];
+    const csvContent = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${formDetails.name || 'form'}_interested.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // Resolve access token (same approach as other pages)
@@ -112,18 +133,43 @@ export default function FormDetails() {
       setLoadingInterests(true);
       const data = await formsAPI.getInterested(getApiToken());
       const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-      const filtered = list.filter(i => !i.formId || i.formId === formId || (i.form?._id && i.form?._id === formId));
-      const mapped = filtered.map((i, idx) => ({
-        id: i._id,
-        userId: i.userId,
-        formId: i.formId || i.form?._id,
-        formName: i.formName || formDetails.name || 'Form',
-        planName: i.planName || '',
-        interestedPlan: i.interestedPlan || '',
-        customer: nameFromEmail(i.userEmail) || i.userName || i.userId || `User ${idx + 1}`,
-        createdAt: i.createdAt,
-        sentOn: i.createdAt ? new Date(i.createdAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '',
-      }));
+      // Show all interests as requested (no filtering by formId)
+      const filtered = list;
+      // Ensure auxiliary data exists
+      let usersList = users;
+      if (!usersList || usersList.length === 0) {
+        const u = await formsAPI.getUsers(getApiToken());
+        usersList = Array.isArray(u) ? u : (Array.isArray(u?.data) ? u.data : []);
+        setUsers(usersList);
+      }
+      let plansList = plans;
+      if (!plansList || plansList.length === 0) {
+        const p = await formsAPI.getPlans(getApiToken());
+        const mapped = (Array.isArray(p) ? p : (Array.isArray(p?.data) ? p.data : [])).map(pl => ({ id: pl._id, name: pl.name }));
+        plansList = mapped;
+        setPlans(mapped);
+      }
+      // Build quick lookups
+      const usersMap = (usersList || []).reduce((acc, u) => { acc[u._id] = u; return acc; }, {});
+      const plansMap = (plansList || []).reduce((acc, p) => { acc[p.id] = p.name; return acc; }, {});
+      const mapped = filtered.map((i, idx) => {
+        const userObj = (i.userId && typeof i.userId === 'object') ? i.userId : usersMap[i.userId];
+        const email = userObj?.email || i.email || '';
+        const userPlan = (userObj && typeof userObj.plan === 'object' && userObj.plan?.name)
+          ? userObj.plan.name
+          : (userObj && typeof userObj.plan === 'string' ? plansMap[userObj.plan] : '');
+        return ({
+          id: i._id,
+          userId: i.userId,
+          formId: (i.formId && typeof i.formId === 'object') ? i.formId._id : (i.formId || i.form?._id),
+          formName: (i.formId && typeof i.formId === 'object') ? i.formId.name : (i.formName || formDetails.name || 'Form'),
+          email,
+          currentPlan: userPlan || '-',
+          interestedPlan: i.interestedPlan || '',
+          createdAt: i.createdAt,
+          sentOn: i.createdAt ? new Date(i.createdAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '',
+        });
+      });
       setInterests(mapped);
     } catch (e) {
       console.error('Error loading interests', e);
@@ -133,10 +179,21 @@ export default function FormDetails() {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const data = await formsAPI.getUsers(getApiToken());
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      setUsers(list);
+    } catch (e) {
+      console.error('Error fetching users', e);
+      setUsers([]);
+    }
+  };
+
   const handleSendFormFromInterest = async (interest) => {
     try {
       const payload = {
-        userId: interest.userId,
+        userId: (interest.userId && typeof interest.userId === 'object') ? interest.userId._id : interest.userId,
         formId: interest.formId,
         contextType: 'interest',
         contextId: interest.id,
@@ -242,6 +299,7 @@ export default function FormDetails() {
   useEffect(() => {
     if (activeTab === 'interested') {
       loadInterests();
+      fetchUsers();
     }
   }, [activeTab, formId]);
 
@@ -676,6 +734,16 @@ export default function FormDetails() {
     question.question.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const filteredInterests = interests.filter(item => {
+    const q = interestedSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (item.email || '').toLowerCase().includes(q) ||
+      (item.currentPlan || '').toLowerCase().includes(q) ||
+      (item.formName || '').toLowerCase().includes(q)
+    );
+  });
+
   if (loading) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -780,6 +848,92 @@ export default function FormDetails() {
                           <td colSpan="2" className="px-4 py-4 text-gray-500">No answers found</td>
                         </tr>
                       )}
+                {activeTab === 'interested' && (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                    <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search..."
+                            value={interestedSearch}
+                            onChange={(e) => setInterestedSearch(e.target.value)}
+                            className="pl-9 pr-4 py-2 w-80 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={handleExportInterests}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M8 2v8m0 0L5.5 7.5M8 10l2.5-2.5M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Export
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Form</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Email</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Current Plan</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Requested on</th>
+                            <th className="px-4 py-3 w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredInterests.map((item) => (
+                            <tr key={item.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-4 text-sm text-gray-900">{item.formName}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.email || '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.currentPlan || '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.sentOn}</td>
+                              <td className="px-4 py-4">
+                                <div className="relative dropdown-container">
+                                  <button
+                                    onClick={() => setActiveDropdown(activeDropdown === `interest-${item.id}` ? null : `interest-${item.id}`)}
+                                    className="text-gray-400 hover:text-gray-600"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                      <circle cx="8" cy="3" r="1.5"/>
+                                      <circle cx="8" cy="8" r="1.5"/>
+                                      <circle cx="8" cy="13" r="1.5"/>
+                                    </svg>
+                                  </button>
+                                  {activeDropdown === `interest-${item.id}` && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                                      <div className="py-1">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); handleSendFormFromInterest(item); }}
+                                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        >
+                                          Send form
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredInterests.length === 0 && (
+                            <tr>
+                              <td colSpan="5" className="px-4 py-8 text-center text-sm text-gray-500">No interested requests found</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
                     </tbody>
                   </table>
                 </div>
@@ -1081,6 +1235,8 @@ export default function FormDetails() {
                           <input
                             type="text"
                             placeholder="Search..."
+                            value={interestedSearch}
+                            onChange={(e) => setInterestedSearch(e.target.value)}
                             className="pl-9 pr-4 py-2 w-80 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
@@ -1100,7 +1256,7 @@ export default function FormDetails() {
                       </div>
                       <div className="flex items-center gap-3">
                         <button 
-                          onClick={handleExportResponses}
+                          onClick={handleExportInterests}
                           className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -1250,6 +1406,94 @@ export default function FormDetails() {
                     </div>
                   </div>
                 )}
+
+                {activeTab === 'interested' && (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                    <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search..."
+                            value={interestedSearch}
+                            onChange={(e) => setInterestedSearch(e.target.value)}
+                            className="pl-9 pr-4 py-2 w-80 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={handleExportInterests}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M8 2v8m0 0L5.5 7.5M8 10l2.5-2.5M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Export
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Form</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Email</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Current Plan</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Requested on</th>
+                            <th className="px-4 py-3 w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredInterests.map((item) => (
+                            <tr key={item.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-4 text-sm text-gray-900">{item.formName}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.email || '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.currentPlan || '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-700">{item.sentOn}</td>
+                              <td className="px-4 py-4">
+                                <div className="relative dropdown-container">
+                                  <button
+                                    onClick={() => setActiveDropdown(activeDropdown === `interest-${item.id}` ? null : `interest-${item.id}`)}
+                                    className="text-gray-400 hover:text-gray-600"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                      <circle cx="8" cy="3" r="1.5"/>
+                                      <circle cx="8" cy="8" r="1.5"/>
+                                      <circle cx="8" cy="13" r="1.5"/>
+                                    </svg>
+                                  </button>
+                                  {activeDropdown === `interest-${item.id}` && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                                      <div className="py-1">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); handleSendFormFromInterest(item); }}
+                                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        >
+                                          Send form
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredInterests.length === 0 && (
+                            <tr>
+                              <td colSpan="5" className="px-4 py-8 text-center text-sm text-gray-500">No interested requests found</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
           </div>

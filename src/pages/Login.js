@@ -6,19 +6,21 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  // BMS Auth0 configuration
   const config = {
     domain: "bms-optimus.us.auth0.com",
-    webClientId: "Q6sGKEIJKyFMoTzm6mzq9eM9KNVdjCOy",
+    webClientId: "sUx9EQz3ETirGypH8BUou5Thy0avgexk",
+    webClientSecret: "vKuJcE30YeJzXKsSYObt0kZXJW5IyrLxxR15ZplazSZwOHn7ODRhBrK2_KKwJeOn",
     managementClientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
     managementClientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
     audience: "https://bms-optimus.us.auth0.com/api/v2/",
-    allowedRoleId: "rol_w5FheridDpGctfQC" // Only users with this role can login
+    allowedRoleId: "rol_FdjheKGmIFxzp6hR" // Only users with this role can login
   };
 
-  // Get Management API token
+  const SYNC_ENDPOINT = "https://njs-01.optimuslab.space/booking_features/auth/sync";
+
   const getManagementToken = async () => {
     try {
       const response = await fetch(`https://${config.domain}/oauth/token`, {
@@ -54,7 +56,6 @@ export default function Login() {
         return false;
       }
 
-      // Fetch users with the allowed role
       const response = await fetch(
         `https://${config.domain}/api/v2/roles/${config.allowedRoleId}/users`,
         {
@@ -81,6 +82,41 @@ export default function Login() {
     }
   };
 
+  const syncUserToBackend = async (userInfo, accessToken) => {
+    try {
+      const payload = {
+        email: userInfo.email,
+        username: userInfo.username,
+        role: userInfo.role || "User",
+        accessToken: accessToken
+      };
+
+      console.log("LOGIN: Sending data to sync endpoint:", payload);
+
+      const response = await fetch(SYNC_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("LOGIN: Failed to sync user to backend:", response.status, errorData);
+        throw new Error(`Sync failed with status ${response.status}`);
+      }
+
+      const responseData = await response.json();
+      console.log("LOGIN: Successfully synced user to backend:", responseData);
+      return true;
+    } catch (error) {
+      console.error("LOGIN: Error syncing user to backend:", error);
+      return false;
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     
@@ -88,6 +124,9 @@ export default function Login() {
       setError("Both email and password fields are required.");
       return;
     }
+
+    setIsLoading(true);
+    setError('');
   
     try {
       const tokenData = new URLSearchParams({
@@ -123,33 +162,66 @@ export default function Login() {
       });
   
       const userData = await userResponse.json();
-  
+
       // Check if user has the allowed role
       const hasAllowedRole = await checkUserRole(userData.sub);
       
       if (!hasAllowedRole) {
-        setError("You do not have access to this application.");
+        setError("You do not have access to this application. Please contact support.");
         return;
       }
 
-      // Extract username from metadata or fallback to email
-      const storedUsername = userData.user_metadata?.username || userData.email.split("@")[0];
-  
-      // Store user details in session/state (not localStorage in artifacts)
-      // In a real implementation, you'd use React context or state management
-      const userInfo = {
-        username: storedUsername,
+      const managementToken = await getManagementToken();
+      let completeUserData = null;
+
+      if (managementToken) {
+        try {
+          const usersResponse = await fetch(`${config.audience}users`, {
+            headers: { 
+              Authorization: `Bearer ${managementToken}`,
+              'Content-Type': 'application/json'
+            },
+          });
+
+          if (usersResponse.ok) {
+            const allUsers = await usersResponse.json();
+            const auth0User = allUsers.find((u) => u.email === userData.email);
+            
+            if (auth0User) {
+              completeUserData = {
+                username: auth0User.user_metadata?.username || 
+                          auth0User.username || 
+                          auth0User.email.split("@")[0],
+                email: auth0User.email,
+                role: auth0User.app_metadata?.role || "User",
+              };
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching complete user data:", error);
+        }
+      }
+
+      // Fallback to basic data if Management API fetch fails
+      const userInfo = completeUserData || {
+        username: userData.user_metadata?.username || userData.email.split("@")[0],
         email: userData.email,
+        role: "User"
       };
       
       sessionStorage.setItem("user", JSON.stringify(userInfo));
       sessionStorage.setItem("access_token", data.access_token);
       
-      console.log("User info saved:", storedUsername, userData.email); 
+      console.log("User info saved:", userInfo); 
   
+      await syncUserToBackend(userInfo, data.access_token);
+
       navigate("/dashboard");
     } catch (error) {
+      console.error("Login error:", error);
       setError(error.message || "Login failed. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -159,9 +231,7 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-4">
           <div className="inline-flex items-center justify-center mb-6">
-            
-              <img src="/logo.png" alt="Optimus Logo" className="w-8 h-8 mr-3" />
-            
+            <img src="/logo.png" alt="Optimus Logo" className="w-8 h-8 mr-3" />
             <span className="text-2xl font-normal text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
               Optimus
             </span>
@@ -172,9 +242,6 @@ export default function Login() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 px-8 py-10">
           {/* Header */}
           <div className="mb-6">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-              ADMIN
-            </p>
             <h2 className="text-2xl font-normal text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
               Log in to your account
             </h2>
@@ -194,7 +261,7 @@ export default function Login() {
             {/* Email Field */}
             <div>
               <label className="block text-sm text-gray-600 mb-2" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-                Email or username
+                Email
               </label>
               <input
                 type="text"
@@ -241,20 +308,29 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Forgot Password Link */}
-            <div className="text-right">
-             
-            </div>
-
             {/* Login Button */}
             <button
               type="submit"
-              className="w-full bg-blue-700 text-white py-3 px-4 rounded-lg text-sm font-medium hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+              disabled={isLoading}
+              className="w-full bg-blue-700 text-white py-3 px-4 rounded-lg text-sm font-medium hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed"
               style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
             >
-              Login
+              {isLoading ? 'Logging in...' : 'Login'}
             </button>
           </form>
+
+          {/* Signup Link */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-600" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+              Don't have an account?{' '}
+              <button
+                onClick={() => navigate('/signup')}
+                className="text-blue-700 font-medium hover:text-blue-800"
+              >
+                SIGN UP HERE
+              </button>
+            </p>
+          </div>
         </div>
       </div>
     </div>
