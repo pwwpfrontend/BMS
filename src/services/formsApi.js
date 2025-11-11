@@ -126,6 +126,22 @@ class FormsAPI {
     });
   }
 
+  // Update response status
+  async updateResponseStatus(responseId, statusData, token) {
+    // Convert status to lowercase for consistency
+    if (typeof statusData === 'string') {
+      statusData = { status: statusData.toLowerCase() };
+    } else if (statusData && typeof statusData === 'object' && statusData.status) {
+      statusData = { ...statusData, status: statusData.status.toLowerCase() };
+    }
+    
+    return this.apiRequest(`/responses/${responseId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+      token,
+    });
+  }
+
   // Delete field
   async deleteFormField(formId, fieldId, token) {
     return this.apiRequest(`/forms/${formId}/fields/${fieldId}`, {
@@ -223,6 +239,28 @@ class FormsAPI {
   // Get interests (admin)
   async getInterested(token) {
     return this.apiRequest('https://njs-01.optimuslab.space/booking_features/interested', { token });
+  }
+
+  async deleteInterested(interestId, token) {
+    return this.apiRequest(`https://njs-01.optimuslab.space/booking_features/interested/${interestId}`, {
+      method: 'DELETE',
+      token,
+    });
+  }
+
+  async getSendForms(token) {
+    return this.apiRequest('https://njs-01.optimuslab.space/booking_features/send-form', { token });
+  }
+
+  async getMySentForms(token) {
+    return this.apiRequest('https://njs-01.optimuslab.space/booking_features/my-sent-forms', { token });
+  }
+
+  async deleteSentForm(sentFormId, token) {
+    return this.apiRequest(`https://njs-01.optimuslab.space/booking_features/send-form/${sentFormId}`, {
+      method: 'DELETE',
+      token,
+    });
   }
 
   // Send/assign form (admin)

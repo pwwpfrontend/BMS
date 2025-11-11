@@ -9,18 +9,19 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
+  // BMS Auth0 configuration
   const config = {
     domain: "bms-optimus.us.auth0.com",
-    webClientId: "sUx9EQz3ETirGypH8BUou5Thy0avgexk",
-    webClientSecret: "vKuJcE30YeJzXKsSYObt0kZXJW5IyrLxxR15ZplazSZwOHn7ODRhBrK2_KKwJeOn",
+    webClientId: "Q6sGKEIJKyFMoTzm6mzq9eM9KNVdjCOy",
     managementClientId: "x3UIh4PsAjdW1Y0uTmjDUk5VIA36iQ12",
     managementClientSecret: "xYfZ6lk_kJoLy73sgh3jAY_4U4bMnwm58EjN97Ozw-JcsQTs36JpA2UM4C2xVn-r",
     audience: "https://bms-optimus.us.auth0.com/api/v2/",
-    allowedRoleId: "rol_FdjheKGmIFxzp6hR" // Only users with this role can login
+    allowedRoleId: "rol_w5FheridDpGctfQC" // Only users with this role can login
   };
 
   const SYNC_ENDPOINT = "https://njs-01.optimuslab.space/booking_features/auth/sync";
 
+  // Get Management API token
   const getManagementToken = async () => {
     try {
       const response = await fetch(`https://${config.domain}/oauth/token`, {
@@ -56,6 +57,7 @@ export default function Login() {
         return false;
       }
 
+      // Fetch users with the allowed role
       const response = await fetch(
         `https://${config.domain}/api/v2/roles/${config.allowedRoleId}/users`,
         {
@@ -162,12 +164,12 @@ export default function Login() {
       });
   
       const userData = await userResponse.json();
-
+  
       // Check if user has the allowed role
       const hasAllowedRole = await checkUserRole(userData.sub);
       
       if (!hasAllowedRole) {
-        setError("You do not have access to this application. Please contact support.");
+        setError("You do not have access to this application.");
         return;
       }
 
@@ -242,6 +244,9 @@ export default function Login() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 px-8 py-10">
           {/* Header */}
           <div className="mb-6">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+              ADMIN
+            </p>
             <h2 className="text-2xl font-normal text-gray-900" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
               Log in to your account
             </h2>
@@ -261,7 +266,7 @@ export default function Login() {
             {/* Email Field */}
             <div>
               <label className="block text-sm text-gray-600 mb-2" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-                Email
+                Email or username
               </label>
               <input
                 type="text"
@@ -318,19 +323,6 @@ export default function Login() {
               {isLoading ? 'Logging in...' : 'Login'}
             </button>
           </form>
-
-          {/* Signup Link */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-              Don't have an account?{' '}
-              <button
-                onClick={() => navigate('/signup')}
-                className="text-blue-700 font-medium hover:text-blue-800"
-              >
-                SIGN UP HERE
-              </button>
-            </p>
-          </div>
         </div>
       </div>
     </div>

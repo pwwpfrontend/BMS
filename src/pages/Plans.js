@@ -9,8 +9,9 @@ import Sidebar from '../components/Sidebar';
 const BASE_URL = 'https://njs-01.optimuslab.space/booking_features';
 
 function getAuthHeaders() {
-  const token = (typeof localStorage !== 'undefined' && (localStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('id_token'))) 
-    || (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('access_token') || sessionStorage.getItem('token') || sessionStorage.getItem('id_token')));
+  // Use the access_token issued for the backend API; avoid id_token/token keys
+  const token = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('access_token'))
+    || (typeof localStorage !== 'undefined' && localStorage.getItem('access_token'));
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

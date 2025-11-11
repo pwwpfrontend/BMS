@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import Sidebar from '../components/Sidebar';
 import formsAPI from '../services/formsApi';
 
@@ -41,9 +43,13 @@ export default function FormDetails() {
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [showResponseDetails, setShowResponseDetails] = useState(false);
   const [interests, setInterests] = useState([]);
-  const [loadingInterests, setLoadingInterests] = useState(false);
   const [users, setUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [interestedSearch, setInterestedSearch] = useState('');
+  const [loadingInterests, setLoadingInterests] = useState(false);
+  const [showInterestDetails, setShowInterestDetails] = useState(false);
+  const [selectedInterest, setSelectedInterest] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState('');
 
   const [newQuestion, setNewQuestion] = useState({
     question: '',
@@ -128,52 +134,163 @@ export default function FormDetails() {
     return cleaned || local;
   };
 
+  const handleDeleteResponse = async (responseId) => {
+    if (window.confirm('Are you sure you want to delete this response?')) {
+      try {
+        await formsAPI.deleteResponse(formId, responseId, getApiToken());
+        loadFormData(); // Reload responses
+        toast.success('Response deleted successfully');
+      } catch (error) {
+        console.error('Error deleting response:', error);
+        toast.error('Failed to delete response');
+      }
+    }
+  };
+
+  const handleDeleteInterest = async (interestId) => {
+    if (window.confirm('Are you sure you want to delete this interest?')) {
+      try {
+        await formsAPI.deleteInterested(interestId, getApiToken());
+        loadInterests(); // Reload interests
+        toast.success('Interest deleted successfully');
+      } catch (error) {
+        console.error('Error deleting interest:', error);
+        toast.error('Failed to delete interest');
+      }
+    }
+  };
+
+  const handleUpdateResponseStatus = async (responseId, status) => {
+    let toastId;
+    try {
+      // First show a loading toast
+      toastId = toast.loading(`Updating response status to ${status}...`);
+      
+      // Make sure status is one of the allowed values
+      const validStatus = status.toLowerCase();
+      if (!['approved', 'rejected', 'pending'].includes(validStatus)) {
+        throw new Error(`Invalid status: ${status}. Must be one of: approved, rejected, pending`);
+      }
+      
+      // Pass the status directly as a string - the API method will handle the conversion
+      await formsAPI.updateResponseStatus(responseId, validStatus, getApiToken());
+      
+      // Update the toast to show success
+      if (toastId && toast.isActive(toastId)) {
+        toast.update(toastId, {
+          render: `Response ${validStatus} successfully`,
+          type: 'success',
+          isLoading: false,
+          autoClose: 3000
+        });
+      } else {
+        toast.success(`Response ${validStatus} successfully`);
+      }
+      
+      // Reload form data to update the status
+      loadFormData();
+      setShowResponseDetails(false);
+    } catch (error) {
+      console.error('Error updating response status:', error);
+      
+      // If there's an error, update the toast to show the error
+      if (toastId && toast.isActive(toastId)) {
+        toast.update(toastId, {
+          render: `Failed to ${status} response: ${error.message || 'Unknown error'}`,
+          type: 'error',
+          isLoading: false,
+          autoClose: 5000
+        });
+      } else {
+        toast.error(`Failed to ${status} response: ${error.message || 'Unknown error'}`);
+      }
+    }
+  };
+
+  const handleSendFormToUser = async (userId) => {
+    try {
+      if (!userId) {
+        toast.error('Please select a user');
+        return;
+      }
+
+      const payload = {
+        userId,
+        formId: '68f058038208c43281555c59', // InnoPeers+ form ID
+        contextType: 'manual',
+        notes: 'InnoPeers+ form sent by admin'
+      };
+
+      await formsAPI.sendFormAssignment(payload, getApiToken());
+      toast.success('Form sent successfully!');
+      setShowSendForm(false);
+      setShowInterestDetails(false);
+      setSelectedUserId('');
+    } catch (error) {
+      console.error('Error sending form:', error);
+      toast.error(error.message || 'Failed to send form');
+    }
+  };
+
   const loadInterests = async () => {
     try {
       setLoadingInterests(true);
-      const data = await formsAPI.getInterested(getApiToken());
-      const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-      // Show all interests as requested (no filtering by formId)
-      const filtered = list;
-      // Ensure auxiliary data exists
-      let usersList = users;
-      if (!usersList || usersList.length === 0) {
-        const u = await formsAPI.getUsers(getApiToken());
-        usersList = Array.isArray(u) ? u : (Array.isArray(u?.data) ? u.data : []);
-        setUsers(usersList);
-      }
+      const [interestsRes, usersRes] = await Promise.all([
+        formsAPI.getInterested(getApiToken()),
+        formsAPI.getUsers(getApiToken())
+      ]);
+      
+      const list = Array.isArray(interestsRes) ? interestsRes : (Array.isArray(interestsRes?.data) ? interestsRes.data : []);
+      const usersList = Array.isArray(usersRes) ? usersRes : (Array.isArray(usersRes?.data) ? usersRes.data : []);
+      
+      setAllUsers(usersList);
+      setUsers(usersList);
+      
+      // Get plans if not already loaded
       let plansList = plans;
       if (!plansList || plansList.length === 0) {
         const p = await formsAPI.getPlans(getApiToken());
-        const mapped = (Array.isArray(p) ? p : (Array.isArray(p?.data) ? p.data : [])).map(pl => ({ id: pl._id, name: pl.name }));
-        plansList = mapped;
-        setPlans(mapped);
+        plansList = (Array.isArray(p) ? p : (Array.isArray(p?.data) ? p.data : [])).map(pl => ({ id: pl._id, name: pl.name }));
+        setPlans(plansList);
       }
+      
       // Build quick lookups
-      const usersMap = (usersList || []).reduce((acc, u) => { acc[u._id] = u; return acc; }, {});
-      const plansMap = (plansList || []).reduce((acc, p) => { acc[p.id] = p.name; return acc; }, {});
-      const mapped = filtered.map((i, idx) => {
+      const usersMap = usersList.reduce((acc, u) => { acc[u._id] = u; return acc; }, {});
+      const plansMap = plansList.reduce((acc, p) => { acc[p.id] = p.name; return acc; }, {});
+      
+      const mapped = list.map((i) => {
         const userObj = (i.userId && typeof i.userId === 'object') ? i.userId : usersMap[i.userId];
         const email = userObj?.email || i.email || '';
         const userPlan = (userObj && typeof userObj.plan === 'object' && userObj.plan?.name)
           ? userObj.plan.name
           : (userObj && typeof userObj.plan === 'string' ? plansMap[userObj.plan] : '');
+        
         return ({
           id: i._id,
-          userId: i.userId,
+          userId: i.userId?._id || i.userId,
           formId: (i.formId && typeof i.formId === 'object') ? i.formId._id : (i.formId || i.form?._id),
           formName: (i.formId && typeof i.formId === 'object') ? i.formId.name : (i.formName || formDetails.name || 'Form'),
           email,
           currentPlan: userPlan || '-',
           interestedPlan: i.interestedPlan || '',
+          notes: i.notes || '',
           createdAt: i.createdAt,
-          sentOn: i.createdAt ? new Date(i.createdAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '',
+          sentOn: i.createdAt ? new Date(i.createdAt).toLocaleString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric', 
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: true 
+          }) : '',
         });
       });
+      
       setInterests(mapped);
     } catch (e) {
       console.error('Error loading interests', e);
       setInterests([]);
+      toast.error('Failed to load interests');
     } finally {
       setLoadingInterests(false);
     }
@@ -744,6 +861,11 @@ export default function FormDetails() {
     );
   });
 
+  const handleShowInterestDetails = (interest) => {
+    setSelectedInterest(interest);
+    setShowInterestDetails(true);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -911,7 +1033,7 @@ export default function FormDetails() {
                                   {activeDropdown === `interest-${item.id}` && (
                                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
                                       <div className="py-1">
-                                        <button
+                                        <button 
                                           onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); handleSendFormFromInterest(item); }}
                                           className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                         >
@@ -937,6 +1059,21 @@ export default function FormDetails() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => handleUpdateResponseStatus(selectedResponse.id, 'rejected')}
+                  className="px-4 py-2 text-sm font-medium text-red-600 border border-red-600 rounded-md hover:bg-red-50"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={() => handleUpdateResponseStatus(selectedResponse.id, 'approved')}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                >
+                  Approve
+                </button>
               </div>
             </div>
             {/* Footer removed: approvals handled via per-row menu */}
@@ -1350,7 +1487,10 @@ export default function FormDetails() {
                               <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                                 <div className="relative dropdown-container">
                                   <button
-                                    onClick={() => setActiveDropdown(activeDropdown === `resp-${response.id}` ? null : `resp-${response.id}`)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveDropdown(activeDropdown === `resp-${response.id}` ? null : `resp-${response.id}`);
+                                    }}
                                     className="text-gray-400 hover:text-gray-600"
                                   >
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -1360,16 +1500,29 @@ export default function FormDetails() {
                                     </svg>
                                   </button>
                                   {activeDropdown === `resp-${response.id}` && (
-                                    <div className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
                                       <div className="py-1">
-                                        {response.status !== 'approved' && (
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); handleApproveResponse(response.id); }}
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                          >
-                                            Approve
-                                          </button>
-                                        )}
+                                        <button
+                                          onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            setActiveDropdown(null); 
+                                            setSelectedResponse(response); 
+                                            setShowResponseDetails(true); 
+                                          }}
+                                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        >
+                                          View details
+                                        </button>
+                                        <button
+                                          onClick={(e) => { 
+                                            e.stopPropagation();
+                                            setActiveDropdown(null);
+                                            handleDeleteResponse(response._id);
+                                          }}
+                                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                        >
+                                          Delete
+                                        </button>
                                       </div>
                                     </div>
                                   )}
@@ -1458,7 +1611,7 @@ export default function FormDetails() {
                               <td className="px-4 py-4">
                                 <div className="relative dropdown-container">
                                   <button
-                                    onClick={() => setActiveDropdown(activeDropdown === `interest-${item.id}` ? null : `interest-${item.id}`)}
+                                    onClick={() => setActiveDropdown(activeDropdown === `int-${item.id}` ? null : `int-${item.id}`)}
                                     className="text-gray-400 hover:text-gray-600"
                                   >
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -1467,14 +1620,28 @@ export default function FormDetails() {
                                       <circle cx="8" cy="13" r="1.5"/>
                                     </svg>
                                   </button>
-                                  {activeDropdown === `interest-${item.id}` && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                                  {activeDropdown === `int-${item.id}` && (
+                                    <div className="absolute right-0 mt-2 w-32 bg-white rounded-md shadow-lg border border-gray-200 z-10">
                                       <div className="py-1">
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); handleSendFormFromInterest(item); }}
+                                          onClick={(e) => { 
+                                            e.stopPropagation();
+                                            setActiveDropdown(null);
+                                            handleDeleteInterest(item.id);
+                                          }}
+                                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                        >
+                                          Delete
+                                        </button>
+                                        <button
+                                          onClick={(e) => { 
+                                            e.stopPropagation();
+                                            setActiveDropdown(null);
+                                            handleShowInterestDetails(item);
+                                          }}
                                           className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                         >
-                                          Send form
+                                          View details
                                         </button>
                                       </div>
                                     </div>
@@ -1500,6 +1667,69 @@ export default function FormDetails() {
         </main>
       </div>
 
+      {/* Interest Details Modal */}
+      {showInterestDetails && selectedInterest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Interest Details</h2>
+              <button 
+                onClick={() => setShowInterestDetails(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs text-gray-500">Email</div>
+                  <div className="text-sm font-medium text-gray-900">{selectedInterest.email || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Current Plan</div>
+                  <div className="text-sm text-gray-900">{selectedInterest.currentPlan || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Interested In</div>
+                  <div className="text-sm text-gray-900">{selectedInterest.interestedPlan || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Requested On</div>
+                  <div className="text-sm text-gray-900">
+                    {selectedInterest.sentOn || (selectedInterest.createdAt ? 
+                      new Date(selectedInterest.createdAt).toLocaleString() : '-')}
+                  </div>
+                </div>
+                {selectedInterest.notes && (
+                  <div className="col-span-2">
+                    <div className="text-xs text-gray-500">Notes</div>
+                    <div className="text-sm text-gray-900">{selectedInterest.notes}</div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4 mt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setShowInterestDetails(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => handleSendFormToUser(selectedInterest.userId)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                >
+                  Send InnoPeers+ Form
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Send Form Modal */}
       {showSendForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1516,50 +1746,33 @@ export default function FormDetails() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
                 <select
-                  value={sendFormData.customerEmail}
-                  onChange={(e) => setSendFormData({ ...sendFormData, customerEmail: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md"
                 >
-                  <option value="">Select a customer</option>
-                  {customers.map(c => (
-                    <option key={c.id} value={c.email}>{c.name} ({c.email})</option>
+                  <option value="">Select a user</option>
+                  {allUsers.map(user => (
+                    <option key={user._id} value={user._id}>
+                      {user.email} ({user.name || 'No name'})
+                    </option>
                   ))}
                 </select>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Form</label>
-                <input
-                  type="text"
-                  value={formDetails.name}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600"
-                />
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowSendForm(false)}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSendFormToUser(selectedUserId)}
+                  disabled={!selectedUserId}
+                  className={`px-4 py-2 text-white rounded-md ${!selectedUserId ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  Send Form
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="emailNotify"
-                  type="checkbox"
-                  checked={sendFormData.emailNotification}
-                  onChange={(e) => setSendFormData({ ...sendFormData, emailNotification: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="emailNotify" className="text-sm text-gray-700">Send email notification</label>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowSendForm(false)}
-                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSendForm}
-                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                Send form
-              </button>
             </div>
           </div>
         </div>
