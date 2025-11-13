@@ -202,11 +202,11 @@ class FormsAPI {
 
   // BHMS endpoints (absolute URLs)
   async getBhmsForms(token) {
-    return this.apiRequest('https://njs-01.optimuslab.space/bhms/forms', { token });
+    return this.apiRequest('https://njs-01.optimuslab.space/booking_features/forms', { token });
   }
 
   async getBhmsFormResponses(formId, token) {
-    return this.apiRequest(`https://njs-01.optimuslab.space/bhms/form-responses/${formId}`, { token });
+    return this.apiRequest(`https://njs-01.optimuslab.space/booking_features/form-responses/${formId}`, { token });
   }
 
   async getPlans(token) {
