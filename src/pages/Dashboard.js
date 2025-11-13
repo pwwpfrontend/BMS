@@ -177,7 +177,7 @@ const fetchAuth0Users = async () => {
         // Fetch plans
         const fetchPlans = async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/bhms/plans`, {
+            const response = await fetch(`${API_BASE_URL}/booking_features/plans`, {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
