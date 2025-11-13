@@ -30,6 +30,8 @@ export default function FormDetails() {
   const [allForms, setAllForms] = useState([]);
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [selectedFormId, setSelectedFormId] = useState('68f058038208c43281555c59'); // Default to InnoPeers+ form
+  const [sendFormToUserId, setSendFormToUserId] = useState('');
 
   const [formDetails, setFormDetails] = useState({
     name: '',
@@ -214,21 +216,43 @@ export default function FormDetails() {
         return;
       }
 
+      // Find the selected user
+      const user = allUsers.find(u => u._id === userId);
+      if (!user) {
+        throw new Error('Selected user not found');
+      }
+
       const payload = {
         userId,
         formId: '68f058038208c43281555c59', // InnoPeers+ form ID
         contextType: 'manual',
-        notes: 'InnoPeers+ form sent by admin'
+        notes: 'InnoPeers+ form sent by admin',
+        email: user.email,
+        name: user.name || ''
       };
 
       await formsAPI.sendFormAssignment(payload, getApiToken());
-      toast.success('Form sent successfully!');
+      
+      // Show success message
+      toast.success(`InnoPeers+ form sent to ${user.email}`, {
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
+      });
+      
+      // Reset and close
       setShowSendForm(false);
       setShowInterestDetails(false);
       setSelectedUserId('');
+      
+      // Refresh the list if needed
+      loadInterests();
+      
     } catch (error) {
       console.error('Error sending form:', error);
-      toast.error(error.message || 'Failed to send form');
+      toast.error(error.response?.data?.message || error.message || 'Failed to send form');
     }
   };
 
@@ -862,7 +886,12 @@ export default function FormDetails() {
   });
 
   const handleShowInterestDetails = (interest) => {
-    setSelectedInterest(interest);
+    // Find the full user details if available
+    const fullInterest = {
+      ...interest,
+      user: allUsers.find(u => u._id === interest.userId) || {}
+    };
+    setSelectedInterest(fullInterest);
     setShowInterestDetails(true);
   };
 
@@ -1603,15 +1632,24 @@ export default function FormDetails() {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {filteredInterests.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50">
+                            <tr 
+                              key={item.id} 
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => handleShowInterestDetails(item)}
+                            >
                               <td className="px-4 py-4 text-sm text-gray-900">{item.formName}</td>
                               <td className="px-4 py-4 text-sm text-gray-700">{item.email || '-'}</td>
                               <td className="px-4 py-4 text-sm text-gray-700">{item.currentPlan || '-'}</td>
-                              <td className="px-4 py-4 text-sm text-gray-700">{item.sentOn}</td>
-                              <td className="px-4 py-4">
+                              <td className="px-4 py-4 text-sm text-gray-700">
+                                {item.sentOn || (item.createdAt ? new Date(item.createdAt).toLocaleString() : '-')}
+                              </td>
+                              <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                                 <div className="relative dropdown-container">
                                   <button
-                                    onClick={() => setActiveDropdown(activeDropdown === `int-${item.id}` ? null : `int-${item.id}`)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveDropdown(activeDropdown === `int-${item.id}` ? null : `int-${item.id}`);
+                                    }}
                                     className="text-gray-400 hover:text-gray-600"
                                   >
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -1735,7 +1773,7 @@ export default function FormDetails() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Send form</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Send InnoPeers+ Form</h2>
               <button onClick={() => setShowSendForm(false)} className="text-gray-400 hover:text-gray-600">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1744,7 +1782,7 @@ export default function FormDetails() {
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select User</label>
                 <select
                   value={selectedUserId}
                   onChange={(e) => setSelectedUserId(e.target.value)}
@@ -1753,7 +1791,7 @@ export default function FormDetails() {
                   <option value="">Select a user</option>
                   {allUsers.map(user => (
                     <option key={user._id} value={user._id}>
-                      {user.email} ({user.name || 'No name'})
+                      {user.email} {user.name ? `(${user.name})` : ''}
                     </option>
                   ))}
                 </select>
@@ -1770,7 +1808,7 @@ export default function FormDetails() {
                   disabled={!selectedUserId}
                   className={`px-4 py-2 text-white rounded-md ${!selectedUserId ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
-                  Send Form
+                  Send InnoPeers+ Form
                 </button>
               </div>
             </div>

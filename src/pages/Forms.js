@@ -607,12 +607,12 @@ export default function Forms() {
                                   >
                                     {form.active ? 'Mark as Inactive' : 'Mark as Active'}
                                   </button>
-                                  <button
+                                  {/* <button
                                     onClick={() => openSendFormModal(form)}
                                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                   >
                                     Send Form
-                                  </button>
+                                  </button> */}
                                   <button
                                     onClick={() => handleDeleteForm(form.id)}
                                     className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
